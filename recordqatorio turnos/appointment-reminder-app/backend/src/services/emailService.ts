@@ -5,20 +5,21 @@ export class EmailService {
     private transporter: nodemailer.Transporter;
 
     constructor() {
+        // Configuración para avisos@doctorfia.com
         this.transporter = nodemailer.createTransport({
             host: 'smtp.gmail.com',
             port: 587,
             secure: false, // Usar STARTTLS
             auth: {
-                user: process.env.EMAIL_USER,
-                pass: process.env.EMAIL_PASS
+                user: 'avisos@doctorfia.com',
+                pass: 'Angel2025**'
             }
         });
     }
 
     async sendReminder(appointment: Appointment): Promise<void> {
         const mailOptions = {
-            from: process.env.EMAIL_USER,
+            from: 'avisos@doctorfia.com',
             to: appointment.email,
             subject: 'Recordatorio de Turno',
             html: `

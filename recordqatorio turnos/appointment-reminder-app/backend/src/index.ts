@@ -44,16 +44,10 @@ import { AppointmentModel } from './models/appointment';
 cron.schedule('*/10 * * * *', async () => {
     try {
         const now = new Date();
-        const in24h = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+        // Buscar turnos cuya fechaEnvio esté dentro del rango de ejecución (margen de 10 minutos)
+        const start = new Date(now.getTime() - 5 * 60 * 1000);
+        const end = new Date(now.getTime() + 5 * 60 * 1000);
 
-        // Buscar turnos cuya fecha y hora sean exactamente 24h después del momento actual (con margen de 10 minutos)
-        // Suponiendo que appointment.hora es string tipo 'HH:mm'
-        const start = new Date(in24h);
-        start.setMinutes(start.getMinutes() - 5);
-        const end = new Date(in24h);
-        end.setMinutes(end.getMinutes() + 5);
-
-        // Buscar turnos entre start y end, y que no tengan recordatorio enviado
         const appointments = await AppointmentModel.find({
             recordatorioEnviado: { $exists: true },
             $or: [
@@ -61,40 +55,39 @@ cron.schedule('*/10 * * * *', async () => {
                 { 'recordatorioEnviado.whatsapp': { $ne: true } }
             ],
             estado: { $ne: 'cancelado' },
-            fecha: {
-                $gte: new Date(start.getFullYear(), start.getMonth(), start.getDate()),
-                $lte: new Date(end.getFullYear(), end.getMonth(), end.getDate())
-            }
+            fechaEnvio: { $gte: start, $lte: end }
         });
 
         for (const appointment of appointments) {
-            // Parsear hora
-            const [h, m] = appointment.hora.split(':').map(Number);
-            const apptDate = new Date(appointment.fecha);
-            apptDate.setHours(h, m, 0, 0);
-            if (apptDate >= start && apptDate <= end) {
-                // Enviar email si no fue enviado
-                if (!appointment.recordatorioEnviado.email) {
-                    try {
-                        await emailService.sendReminder(appointment);
-                        appointment.recordatorioEnviado.email = true;
-                        appointment.recordatorioEnviado.fechaEnvioEmail = new Date();
-                    } catch (e) {
-                        console.error('Error enviando recordatorio por email:', e);
-                    }
+            // Enviar email si no fue enviado
+            if (!appointment.recordatorioEnviado.email) {
+                try {
+                    await emailService.sendReminder(appointment);
+                    appointment.recordatorioEnviado.email = true;
+                    appointment.recordatorioEnviado.fechaEnvioEmail = new Date();
+                } catch (e) {
+                    console.error('Error enviando recordatorio por email:', e);
                 }
-                // Enviar WhatsApp si no fue enviado
-                if (!appointment.recordatorioEnviado.whatsapp) {
-                    try {
-                        await whatsappService.sendReminder(appointment);
-                        appointment.recordatorioEnviado.whatsapp = true;
-                        appointment.recordatorioEnviado.fechaEnvioWhatsApp = new Date();
-                    } catch (e) {
-                        console.error('Error enviando recordatorio por WhatsApp:', e);
-                    }
-                }
-                await appointment.save();
             }
+            // Enviar WhatsApp si no fue enviado
+            if (!appointment.recordatorioEnviado.whatsapp) {
+                try {
+                    // Log para depuración
+                    console.log('[CRON] Intentando enviar WhatsApp:', {
+                        telefono: appointment.telefono,
+                        paciente: appointment.paciente,
+                        fechaTurno: appointment.fecha,
+                        fechaEnvio: appointment.fechaEnvio,
+                        whatsappReady: whatsappService.getIsReady()
+                    });
+                    await whatsappService.sendReminder(appointment);
+                    appointment.recordatorioEnviado.whatsapp = true;
+                    appointment.recordatorioEnviado.fechaEnvioWhatsApp = new Date();
+                } catch (e) {
+                    console.error('Error enviando recordatorio por WhatsApp:', e);
+                }
+            }
+            await appointment.save();
         }
     } catch (error) {
         console.error('Error sending reminders:', error);

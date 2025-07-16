@@ -38,7 +38,7 @@ interface AppointmentTableProps {
     appointments?: Appointment[];
 }
 
-export const AppointmentTable: React.FC<AppointmentTableProps> = ({ appointments: initialAppointments }) => {
+export const AppointmentTable: React.FC<AppointmentTableProps> = ({ appointments: initialAppointments }: { appointments?: Appointment[] }) => {
     const [appointments, setAppointments] = useState<Appointment[]>(initialAppointments || []);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -130,6 +130,7 @@ export const AppointmentTable: React.FC<AppointmentTableProps> = ({ appointments
                         <TableRow>
                             <TableCell>Fecha del Turno</TableCell>
                             <TableCell>Fecha de Carga</TableCell>
+                            <TableCell>Fecha de Envío</TableCell>
                             <TableCell>Hora</TableCell>
                             <TableCell>Paciente</TableCell>
                             <TableCell>Profesional</TableCell>
@@ -140,62 +141,78 @@ export const AppointmentTable: React.FC<AppointmentTableProps> = ({ appointments
                         </TableRow>
                     </TableHead>
                     <TableBody>
-                        {appointments.map((appointment) => (
-                            <TableRow key={appointment._id}>
-                                <TableCell>{formatDate(appointment.fecha)}</TableCell>
-                                <TableCell>{appointment.fechaCarga ? formatDateTime(appointment.fechaCarga) : '-'}</TableCell>
-                                <TableCell>{appointment.hora}</TableCell>
-                                <TableCell>
-                                    <Typography variant="body2">{appointment.paciente}</Typography>
-                                    <Typography variant="caption" color="textSecondary">
-                                        {appointment.motivo}
-                                    </Typography>
-                                </TableCell>
-                                <TableCell>
-                                    <Typography variant="body2">{appointment.profesional}</Typography>
-                                    <Typography variant="caption" color="textSecondary">
-                                        {appointment.especialidad}
-                                    </Typography>
-                                </TableCell>
-                                <TableCell>
-                                    <Chip
-                                        label={appointment.estado}
-                                        color={getStatusColor(appointment.estado)}
-                                        size="small"
-                                    />
-                                </TableCell>
-                                <TableCell>
-                                    {renderNotificationStatus(
-                                        appointment.recordatorioEnviado.email,
-                                        appointment.recordatorioEnviado.fechaEnvioEmail
-                                    )}
-                                </TableCell>
-                                <TableCell>
-                                    {renderNotificationStatus(
-                                        appointment.recordatorioEnviado.whatsapp,
-                                        appointment.recordatorioEnviado.fechaEnvioWhatsApp
-                                    )}
-                                </TableCell>
-                                <TableCell>
-                                    <IconButton
-                                        onClick={() => handleResendNotification(appointment._id, 'email')}
-                                        disabled={loading}
-                                        size="small"
-                                        color="primary"
-                                    >
-                                        <EmailIcon />
-                                    </IconButton>
-                                    <IconButton
-                                        onClick={() => handleResendNotification(appointment._id, 'whatsapp')}
-                                        disabled={loading}
-                                        size="small"
-                                        color="primary"
-                                    >
-                                        <WhatsAppIcon />
-                                    </IconButton>
-                                </TableCell>
-                            </TableRow>
-                        ))}
+                        {appointments.map((appointment: Appointment) => {
+                            // Buscar la fecha de envío más reciente (email o whatsapp)
+                            let fechaEnvio = '-';
+                            if (appointment.recordatorioEnviado) {
+                                const f1 = appointment.recordatorioEnviado.fechaEnvioEmail;
+                                const f2 = appointment.recordatorioEnviado.fechaEnvioWhatsApp;
+                                if (f1 && f2) {
+                                    fechaEnvio = new Date(f1) > new Date(f2) ? formatDateTime(f1) : formatDateTime(f2);
+                                } else if (f1) {
+                                    fechaEnvio = formatDateTime(f1);
+                                } else if (f2) {
+                                    fechaEnvio = formatDateTime(f2);
+                                }
+                            }
+                            return (
+                                <TableRow key={appointment._id}>
+                                    <TableCell>{formatDate(appointment.fecha)}</TableCell>
+                                    <TableCell>{appointment.fechaCarga ? formatDateTime(appointment.fechaCarga) : '-'}</TableCell>
+                                    <TableCell>{fechaEnvio}</TableCell>
+                                    <TableCell>{appointment.hora}</TableCell>
+                                    <TableCell>
+                                        <Typography variant="body2">{appointment.paciente}</Typography>
+                                        <Typography variant="caption" color="textSecondary">
+                                            {appointment.motivo}
+                                        </Typography>
+                                    </TableCell>
+                                    <TableCell>
+                                        <Typography variant="body2">{appointment.profesional}</Typography>
+                                        <Typography variant="caption" color="textSecondary">
+                                            {appointment.especialidad}
+                                        </Typography>
+                                    </TableCell>
+                                    <TableCell>
+                                        <Chip
+                                            label={appointment.estado}
+                                            color={getStatusColor(appointment.estado)}
+                                            size="small"
+                                        />
+                                    </TableCell>
+                                    <TableCell>
+                                        {renderNotificationStatus(
+                                            appointment.recordatorioEnviado.email,
+                                            appointment.recordatorioEnviado.fechaEnvioEmail
+                                        )}
+                                    </TableCell>
+                                    <TableCell>
+                                        {renderNotificationStatus(
+                                            appointment.recordatorioEnviado.whatsapp,
+                                            appointment.recordatorioEnviado.fechaEnvioWhatsApp
+                                        )}
+                                    </TableCell>
+                                    <TableCell>
+                                        <IconButton
+                                            onClick={() => handleResendNotification(appointment._id, 'email')}
+                                            disabled={loading}
+                                            size="small"
+                                            color="primary"
+                                        >
+                                            <EmailIcon />
+                                        </IconButton>
+                                        <IconButton
+                                            onClick={() => handleResendNotification(appointment._id, 'whatsapp')}
+                                            disabled={loading}
+                                            size="small"
+                                            color="primary"
+                                        >
+                                            <WhatsAppIcon />
+                                        </IconButton>
+                                    </TableCell>
+                                </TableRow>
+                            );
+                        })}
                     </TableBody>
                 </Table>
             </TableContainer>

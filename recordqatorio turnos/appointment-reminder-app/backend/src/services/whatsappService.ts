@@ -4,6 +4,9 @@ import * as qrcode from 'qrcode-terminal';
 import { Appointment } from '../models/appointment';
 
 class WhatsAppServiceSingleton {
+    public getIsReady(): boolean {
+        return this.isReady;
+    }
     private static instance: WhatsAppServiceSingleton;
     private client: Client;
     private isReady: boolean = false;

@@ -111,10 +111,26 @@ export class ExcelService {
                     }
 
                     // Crear el objeto de turno
+                    // Combinar fecha y hora en un solo Date
+                    const fechaBase = this.excelDateToJSDate(getField(row, 'Fecha'));
+                    const horaStr = getField(row, 'Hora')?.toString().trim() || '00:00';
+                    const [h, m] = horaStr.split(':').map(Number);
+                    // Crear fechaTurno exacta
+                    const fechaTurno = new Date(Date.UTC(
+                        fechaBase.getUTCFullYear(),
+                        fechaBase.getUTCMonth(),
+                        fechaBase.getUTCDate(),
+                        h || 0,
+                        m || 0,
+                        0,
+                        0
+                    ));
+                    // Calcular fecha de envío (24h antes)
+                    const fechaEnvio = new Date(fechaTurno.getTime() - 24 * 60 * 60 * 1000);
                     const appointment = {
-                        fecha: this.excelDateToJSDate(getField(row, 'Fecha')),
+                        fecha: fechaTurno, // fecha y hora exacta del Excel
                         fechaCarga: new Date(),
-                        hora: getField(row, 'Hora')?.toString().trim() || '',
+                        hora: horaStr,
                         nroDoc: getField(row, 'Nro Doc')?.toString().trim() || '',
                         paciente: getField(row, 'Paciente')?.toString().trim() || '',
                         telefono: getField(row, 'Telefono')?.toString().trim() || '',
@@ -123,6 +139,7 @@ export class ExcelService {
                         motivo: getField(row, 'Motivo')?.toString().trim() || '',
                         profesional: getField(row, 'Profesional')?.toString().trim() || '',
                         especialidad: getField(row, 'Especialidad')?.toString().trim() || '',
+                        fechaEnvio,
                         recordatorioEnviado: {
                             email: false,
                             whatsapp: false
@@ -187,7 +204,8 @@ export class ExcelService {
                     } else {
                         day = a; month = b;
                     }
-                    const date = new Date(fullYear, month - 1, day);
+                    // Usar Date.UTC para evitar desfase horario
+                    const date = new Date(Date.UTC(fullYear, month - 1, day));
                     if (!isNaN(date.getTime())) {
                         return date;
                     }
@@ -196,9 +214,11 @@ export class ExcelService {
 
             if (typeof excelDate === 'number') {
                 // Excel almacena fechas como días desde 1900-01-01
-                const excelEpoch = new Date(Date.UTC(1899, 11, 30));
-                const date = new Date(excelEpoch.getTime() + Number(excelDate) * 86400000);
-                return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+                // Usar Date.UTC para evitar desfase horario
+                const excelEpoch = Date.UTC(1899, 11, 30);
+                const ms = excelEpoch + Number(excelDate) * 86400000;
+                const date = new Date(ms);
+                return date;
             }
 
             const date = new Date(excelDate as any);
