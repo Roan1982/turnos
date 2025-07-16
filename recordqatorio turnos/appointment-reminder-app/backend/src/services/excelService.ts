@@ -155,26 +155,25 @@ export class ExcelService {
 
     private static excelDateToJSDate(excelDate: string | number): Date {
         try {
-            console.log('Convirtiendo fecha:', excelDate, typeof excelDate);
-
             // Si es string, intentamos primero el formato dd/mm/yyyy
             if (typeof excelDate === 'string') {
-                // Limpiar la fecha de posibles espacios
                 const cleanDate = excelDate.trim();
-                console.log('Fecha limpia:', cleanDate);
-
                 // Formato dd/mm/yyyy
                 if (cleanDate.includes('/')) {
                     const parts = cleanDate.split('/');
                     if (parts.length === 3) {
-                        const [day, month, year] = parts.map(Number);
-                        console.log('Partes de la fecha:', { day, month, year });
-                        if (!isNaN(day) && !isNaN(month) && !isNaN(year)) {
-                            // Asegurarnos de que el año tenga 4 dígitos
-                            const fullYear = year < 100 ? 2000 + year : year;
+                        const [day, month, yearRaw] = parts.map(Number);
+                        if (!isNaN(day) && !isNaN(month) && !isNaN(yearRaw)) {
+                            let fullYear = yearRaw;
+                            if (yearRaw < 100) {
+                                // Si es menor a 50, 20XX. Si es 50 o más, 19XX
+                                fullYear = yearRaw < 50 ? 2000 + yearRaw : 1900 + yearRaw;
+                            }
+                            if (fullYear < 1950 || fullYear > 2100) {
+                                throw new Error(`Año fuera de rango razonable: ${fullYear}`);
+                            }
                             const date = new Date(fullYear, month - 1, day);
                             if (!isNaN(date.getTime())) {
-                                console.log('Fecha convertida:', date);
                                 return date;
                             }
                         }
@@ -186,20 +185,17 @@ export class ExcelService {
             if (typeof excelDate === 'number') {
                 const unixTimestamp = (excelDate - 25569) * 86400 * 1000;
                 const date = new Date(unixTimestamp);
-                console.log('Fecha convertida desde número:', date);
                 return date;
             }
 
             // Último intento: parsear como fecha normal
             const date = new Date(excelDate);
             if (!isNaN(date.getTime())) {
-                console.log('Fecha convertida como fecha normal:', date);
                 return date;
             }
 
             throw new Error(`Formato de fecha inválido: ${excelDate}`);
         } catch (error) {
-            console.error('Error convirtiendo fecha:', error);
             throw new Error(`Formato de fecha inválido: ${excelDate}`);
         }
     }
