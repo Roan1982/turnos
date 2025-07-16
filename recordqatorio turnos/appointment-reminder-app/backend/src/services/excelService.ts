@@ -155,40 +155,47 @@ export class ExcelService {
 
     private static excelDateToJSDate(excelDate: string | number): Date {
         try {
-            // Si es string, intentamos primero el formato dd/mm/yyyy
             if (typeof excelDate === 'string') {
-                const cleanDate = excelDate.trim();
-                // Formato dd/mm/yyyy
-                if (cleanDate.includes('/')) {
-                    const parts = cleanDate.split('/');
-                    if (parts.length === 3) {
-                        const [day, month, yearRaw] = parts.map(Number);
-                        if (!isNaN(day) && !isNaN(month) && !isNaN(yearRaw)) {
-                            let fullYear = yearRaw;
-                            if (yearRaw < 100) {
-                                // Si es menor a 50, 20XX. Si es 50 o más, 19XX
-                                fullYear = yearRaw < 50 ? 2000 + yearRaw : 1900 + yearRaw;
-                            }
-                            if (fullYear < 1950 || fullYear > 2100) {
-                                throw new Error(`Año fuera de rango razonable: ${fullYear}`);
-                            }
-                            const date = new Date(fullYear, month - 1, day);
-                            if (!isNaN(date.getTime())) {
-                                return date;
-                            }
-                        }
+                const cleanDate = excelDate.trim().replace(/-/g, '/');
+                // Soporta d/m/yyyy, m/d/yyyy, d/m/yy, m/d/yy
+                const regex = /^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/;
+                const match = cleanDate.match(regex);
+                if (match) {
+                    let a = parseInt(match[1], 10);
+                    let b = parseInt(match[2], 10);
+                    let yearRaw = parseInt(match[3], 10);
+                    let fullYear = yearRaw;
+                    if (yearRaw < 100) {
+                        fullYear = yearRaw < 50 ? 2000 + yearRaw : 1900 + yearRaw;
+                    }
+                    if (fullYear < 1950 || fullYear > 2100) {
+                        throw new Error(`Año fuera de rango razonable: ${fullYear}`);
+                    }
+                    // Si el primer número es mayor a 12, seguro es día/mes/año
+                    // Si el segundo número es mayor a 12, seguro es mes/día/año (raro en español)
+                    // Si ambos <= 12, priorizamos día/mes/año (por uso en Argentina)
+                    let day, month;
+                    if (a > 12) {
+                        day = a; month = b;
+                    } else if (b > 12) {
+                        day = b; month = a;
+                    } else {
+                        day = a; month = b;
+                    }
+                    const date = new Date(fullYear, month - 1, day);
+                    if (!isNaN(date.getTime())) {
+                        return date;
                     }
                 }
             }
 
-            // Si es número, es un timestamp de Excel
             if (typeof excelDate === 'number') {
-                const unixTimestamp = (excelDate - 25569) * 86400 * 1000;
-                const date = new Date(unixTimestamp);
-                return date;
+                // Excel almacena fechas como días desde 1900-01-01
+                const excelEpoch = new Date(Date.UTC(1899, 11, 30));
+                const date = new Date(excelEpoch.getTime() + Number(excelDate) * 86400000);
+                return new Date(date.getFullYear(), date.getMonth(), date.getDate());
             }
 
-            // Último intento: parsear como fecha normal
             const date = new Date(excelDate);
             if (!isNaN(date.getTime())) {
                 return date;
