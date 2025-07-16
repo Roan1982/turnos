@@ -113,6 +113,7 @@ export class ExcelService {
                     // Crear el objeto de turno
                     const appointment = {
                         fecha: this.excelDateToJSDate(getField(row, 'Fecha')),
+                        fechaCarga: new Date(),
                         hora: getField(row, 'Hora')?.toString().trim() || '',
                         nroDoc: getField(row, 'Nro Doc')?.toString().trim() || '',
                         paciente: getField(row, 'Paciente')?.toString().trim() || '',
@@ -155,8 +156,12 @@ export class ExcelService {
 
     private static excelDateToJSDate(excelDate: string | number): Date {
         try {
+            // Si ya es un objeto Date, devolverlo tal cual (TypeScript compatible)
+            if (typeof excelDate === 'object' && excelDate !== null && Object.prototype.toString.call(excelDate) === '[object Date]' && !isNaN((excelDate as Date).getTime())) {
+                return excelDate as Date;
+            }
             if (typeof excelDate === 'string') {
-                const cleanDate = excelDate.trim().replace(/-/g, '/');
+                const cleanDate = (excelDate as string).trim().replace(/-/g, '/');
                 // Soporta d/m/yyyy, m/d/yyyy, d/m/yy, m/d/yy
                 const regex = /^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/;
                 const match = cleanDate.match(regex);
@@ -196,7 +201,7 @@ export class ExcelService {
                 return new Date(date.getFullYear(), date.getMonth(), date.getDate());
             }
 
-            const date = new Date(excelDate);
+            const date = new Date(excelDate as any);
             if (!isNaN(date.getTime())) {
                 return date;
             }

@@ -7,7 +7,8 @@ export interface Recordatorio {
 
 export interface Appointment {
     _id: string;
-    fecha: string;
+    fecha: string; // Fecha real del turno
+    fechaCarga?: string; // Fecha en que se cargó el turno
     hora: string;
     nroDoc: string;
     paciente: string;

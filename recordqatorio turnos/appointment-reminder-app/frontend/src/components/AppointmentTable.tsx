@@ -128,7 +128,8 @@ export const AppointmentTable: React.FC<AppointmentTableProps> = ({ appointments
                 <Table>
                     <TableHead>
                         <TableRow>
-                            <TableCell>Fecha</TableCell>
+                            <TableCell>Fecha del Turno</TableCell>
+                            <TableCell>Fecha de Carga</TableCell>
                             <TableCell>Hora</TableCell>
                             <TableCell>Paciente</TableCell>
                             <TableCell>Profesional</TableCell>
@@ -142,6 +143,7 @@ export const AppointmentTable: React.FC<AppointmentTableProps> = ({ appointments
                         {appointments.map((appointment) => (
                             <TableRow key={appointment._id}>
                                 <TableCell>{formatDate(appointment.fecha)}</TableCell>
+                                <TableCell>{appointment.fechaCarga ? formatDateTime(appointment.fechaCarga) : '-'}</TableCell>
                                 <TableCell>{appointment.hora}</TableCell>
                                 <TableCell>
                                     <Typography variant="body2">{appointment.paciente}</Typography>

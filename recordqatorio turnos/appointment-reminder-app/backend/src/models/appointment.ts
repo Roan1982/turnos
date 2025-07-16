@@ -2,7 +2,8 @@ import mongoose, { Document, Schema } from 'mongoose';
 
 // Interface para la creación de turnos desde Excel
 export interface AppointmentInput {
-    fecha: Date;
+    fecha: Date; // Fecha real del turno
+    fechaCarga?: Date; // Fecha en que se cargó el turno
     hora: string;
     nroDoc: string;
     paciente: string;
@@ -30,7 +31,8 @@ export interface Appointment extends AppointmentInput {
 export interface AppointmentDocument extends Appointment, Document {}
 
 const AppointmentSchema = new Schema<AppointmentDocument>({
-    fecha: { type: Date, required: true },
+    fecha: { type: Date, required: true }, // Fecha real del turno
+    fechaCarga: { type: Date, default: Date.now }, // Fecha de carga
     hora: { type: String, required: true },
     nroDoc: { type: String, required: true },
     paciente: { type: String, required: true },
