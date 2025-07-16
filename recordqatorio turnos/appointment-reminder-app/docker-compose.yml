@@ -1,0 +1,45 @@
+version: '3.8'
+
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=development
+      - EMAIL_USER=your-email@gmail.com
+      - EMAIL_PASS=your-email-password
+      - MONGODB_URI=mongodb://mongo:27017/appointments
+    volumes:
+      - ./backend/src:/app/src
+      - whatsapp-data:/app/.wwebjs_auth
+      - whatsapp-cache:/app/.wwebjs_cache
+    depends_on:
+      - mongo
+    
+  frontend:
+    build: ./frontend
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    environment:
+      - WATCHPACK_POLLING=true
+      - WDS_SOCKET_PORT=0
+    volumes:
+      - ./frontend/src:/app/src
+      - ./frontend/public:/app/public
+
+  mongo:
+    image: mongo:latest
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    environment:
+      - MONGO_INITDB_DATABASE=appointments
+
+volumes:
+  whatsapp-data:
+  whatsapp-cache:
+  mongodb_data:
