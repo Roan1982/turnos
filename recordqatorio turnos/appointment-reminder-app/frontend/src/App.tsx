@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { WhatsAppQr } from './components/WhatsAppQr';
-import { Container, Typography, Box, Alert, Tabs, Tab } from '@mui/material';
+import { WhatsAppQrModal } from './components/WhatsAppQrModal';
+import { Container, Typography, Box, Alert, Tabs, Tab, Fab, Tooltip } from '@mui/material';
+import WhatsAppIcon from '@mui/icons-material/WhatsApp';
 import { FileUpload } from './components/FileUpload';
 import { AppointmentTable } from './components/AppointmentTable';
 import axios from 'axios';
@@ -37,6 +38,7 @@ function App() {
     const [appointments, setAppointments] = useState<Appointment[]>([]);
     const [error, setError] = useState<string | null>(null);
     const [tabValue, setTabValue] = useState(0);
+    const [qrOpen, setQrOpen] = useState(false);
 
     const handleFileUpload = async (file: File) => {
         try {
@@ -80,8 +82,14 @@ function App() {
                 Sistema de Recordatorio de Turnos
             </Typography>
 
-            {/* Mostrar el QR de WhatsApp arriba de las pestañas */}
-            <WhatsAppQr />
+            {/* Botón flotante para vincular WhatsApp */}
+            <Tooltip title="Vincular WhatsApp">
+                <Fab color="success" aria-label="whatsapp" onClick={() => setQrOpen(true)}
+                    sx={{ position: 'fixed', bottom: 32, right: 32, zIndex: 2000 }}>
+                    <WhatsAppIcon />
+                </Fab>
+            </Tooltip>
+            <WhatsAppQrModal open={qrOpen} onClose={() => setQrOpen(false)} />
 
             <Box sx={{ width: '100%', mt: 4 }}>
                 <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
@@ -90,7 +98,6 @@ function App() {
                         <Tab label="Ver Turnos" />
                     </Tabs>
                 </Box>
-                
                 <TabPanel value={tabValue} index={0}>
                     <FileUpload onFileUpload={handleFileUpload} />
                     {error && (
@@ -99,7 +106,6 @@ function App() {
                         </Alert>
                     )}
                 </TabPanel>
-
                 <TabPanel value={tabValue} index={1}>
                     <AppointmentTable appointments={appointments} />
                 </TabPanel>

@@ -12,7 +12,9 @@ dotenv.config();
 
 const app = express();
 const emailService = new EmailService();
+// WhatsAppService ya es la instancia singleton exportada correctamente
 const whatsappService = WhatsAppService;
+console.log('[INIT] WhatsAppService inicializado:', typeof whatsappService, whatsappService && whatsappService.getIsReady && whatsappService.getIsReady());
 
 // Conectar a MongoDB
 connectToDatabase().catch(console.error);
@@ -22,14 +24,16 @@ app.use(express.json());
 
 // Endpoint para obtener el QR de WhatsApp
 app.get('/api/whatsapp/qr', async (req, res) => {
-    if (!whatsappService.lastQr) {
-        return res.status(404).json({ error: 'No hay QR disponible. El cliente puede estar autenticado o no listo.' });
-    }
     try {
+        if (!whatsappService.lastQr) {
+            console.error('[QR] No hay QR disponible. ¿WhatsApp listo?', whatsappService.getIsReady && whatsappService.getIsReady());
+            return res.status(404).json({ error: 'No hay QR disponible. El cliente puede estar autenticado o no listo.' });
+        }
         // Convertir el QR a imagen base64 para mostrar en el frontend
         const qrImage = await qrcode.toDataURL(whatsappService.lastQr);
         res.json({ qr: qrImage });
     } catch (error) {
+        console.error('[QR] Error generando la imagen del QR:', error);
         res.status(500).json({ error: 'Error generando la imagen del QR.' });
     }
 });
@@ -97,4 +101,47 @@ cron.schedule('*/10 * * * *', async () => {
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
+});
+
+
+// Endpoint temporal para debug: muestra los turnos que deberían recibir recordatorio ahora
+app.get('/api/appointments/debug-reminders', async (req, res) => {
+    try {
+        const now = new Date();
+        const start = new Date(now.getTime() - 5 * 60 * 1000);
+        const end = new Date(now.getTime() + 5 * 60 * 1000);
+        console.log('[DEBUG-REMINDERS] Buscando turnos entre', start, 'y', end);
+        const query = {
+            fechaEnvio: { $gte: start, $lte: end },
+            $or: [
+                { 'recordatorioEnviado.email': { $ne: true } },
+                { 'recordatorioEnviado.whatsapp': { $ne: true } }
+            ],
+            estado: { $ne: 'cancelado' }
+        };
+        console.log('[DEBUG-REMINDERS] Query:', JSON.stringify(query));
+        const appointments = await AppointmentModel.find(query);
+        console.log('[DEBUG-REMINDERS] Resultados encontrados:', appointments.length);
+        if (appointments.length === 0) {
+            return res.json({ message: 'No hay turnos para enviar recordatorio en este rango de tiempo.' });
+        }
+        res.json(appointments.map(a => ({
+            paciente: a.paciente,
+            fecha: a.fecha,
+            fechaEnvio: a.fechaEnvio,
+            email: a.email,
+            telefono: a.telefono,
+            estado: a.estado,
+            recordatorioEnviado: a.recordatorioEnviado
+        })));
+    } catch (error) {
+        console.error('[DEBUG-REMINDERS] Error en la consulta:', error);
+        let msg = 'Error desconocido';
+        if (error && typeof error === 'object' && 'message' in error) {
+            msg = (error as any).message;
+        } else if (typeof error === 'string') {
+            msg = error;
+        }
+        res.status(500).json({ error: msg });
+    }
 });
