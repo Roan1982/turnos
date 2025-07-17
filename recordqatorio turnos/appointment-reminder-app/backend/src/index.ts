@@ -52,17 +52,29 @@ cron.schedule('*/10 * * * *', async () => {
         const start = new Date(now.getTime() - 5 * 60 * 1000);
         const end = new Date(now.getTime() + 5 * 60 * 1000);
 
+        // Buscar turnos pendientes de notificación (con o sin fechaEnvio cargada)
         const appointments = await AppointmentModel.find({
             recordatorioEnviado: { $exists: true },
             $or: [
                 { 'recordatorioEnviado.email': { $ne: true } },
                 { 'recordatorioEnviado.whatsapp': { $ne: true } }
             ],
-            estado: { $ne: 'cancelado' },
-            fechaEnvio: { $gte: start, $lte: end }
+            estado: { $ne: 'cancelado' }
         });
 
         for (const appointment of appointments) {
+            // Si no tiene fechaEnvio, calcularla como 24h antes del turno y guardar
+            if (!appointment.fechaEnvio && appointment.fecha) {
+                appointment.fechaEnvio = new Date(new Date(appointment.fecha).getTime() - 24 * 60 * 60 * 1000);
+                await appointment.save();
+            }
+            // Verificar si la fechaEnvio está en el rango para enviar
+            if (!appointment.fechaEnvio) continue;
+            const now = new Date();
+            const start = new Date(now.getTime() - 5 * 60 * 1000);
+            const end = new Date(now.getTime() + 5 * 60 * 1000);
+            if (appointment.fechaEnvio < start || appointment.fechaEnvio > end) continue;
+
             let enviado = false;
             // Convertir documento Mongoose a objeto plano para los servicios
             const plainAppointment = appointment.toObject ? appointment.toObject() : appointment;
