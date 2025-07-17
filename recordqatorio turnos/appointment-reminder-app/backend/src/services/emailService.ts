@@ -13,6 +13,9 @@ export class EmailService {
             auth: {
                 user: 'avisos@doctorfia.com',
                 pass: 'Angel2025**'
+            },
+            tls: {
+                rejectUnauthorized: false
             }
         });
     }
