@@ -64,34 +64,38 @@ cron.schedule('*/10 * * * *', async () => {
 
         for (const appointment of appointments) {
             let enviado = false;
+            // Convertir documento Mongoose a objeto plano para los servicios
+            const plainAppointment = appointment.toObject ? appointment.toObject() : appointment;
             // Enviar email si no fue enviado
             if (!appointment.recordatorioEnviado.email) {
                 try {
-                    await emailService.sendReminder(appointment);
+                    console.log('[CRON][EMAIL] Enviando recordatorio a:', appointment.email, 'para', appointment.paciente, 'turno:', appointment.fecha, 'hora:', appointment.hora);
+                    await emailService.sendReminder(plainAppointment);
                     appointment.recordatorioEnviado.email = true;
                     appointment.recordatorioEnviado.fechaEnvioEmail = new Date();
                     enviado = true;
+                    console.log('[CRON][EMAIL] Recordatorio enviado con éxito a', appointment.email);
                 } catch (e) {
-                    console.error('Error enviando recordatorio por email:', e);
+                    console.error('[CRON][EMAIL] Error enviando recordatorio por email:', e);
                 }
             }
             // Enviar WhatsApp si no fue enviado
             if (!appointment.recordatorioEnviado.whatsapp) {
                 try {
-                    // Log para depuración
-                    console.log('[CRON] Intentando enviar WhatsApp:', {
+                    console.log('[CRON][WHATSAPP] Intentando enviar WhatsApp:', {
                         telefono: appointment.telefono,
                         paciente: appointment.paciente,
                         fechaTurno: appointment.fecha,
                         fechaEnvio: appointment.fechaEnvio,
                         whatsappReady: whatsappService.getIsReady()
                     });
-                    await whatsappService.sendReminder(appointment);
+                    await whatsappService.sendReminder(plainAppointment);
                     appointment.recordatorioEnviado.whatsapp = true;
                     appointment.recordatorioEnviado.fechaEnvioWhatsApp = new Date();
                     enviado = true;
+                    console.log('[CRON][WHATSAPP] Recordatorio enviado con éxito a', appointment.telefono);
                 } catch (e) {
-                    console.error('Error enviando recordatorio por WhatsApp:', e);
+                    console.error('[CRON][WHATSAPP] Error enviando recordatorio por WhatsApp:', e);
                 }
             }
             // Si se envió al menos uno, actualizar estado a 'notificado'
