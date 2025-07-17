@@ -125,8 +125,7 @@ export class ExcelService {
                         0,
                         0
                     ));
-                    // Calcular fecha de envío (24h antes)
-                    const fechaEnvio = new Date(fechaTurno.getTime() - 24 * 60 * 60 * 1000);
+                    // NO guardar fechaEnvio, solo la fecha real del turno
                     const appointment = {
                         fecha: fechaTurno, // fecha y hora exacta del Excel
                         fechaCarga: new Date(),
@@ -139,7 +138,7 @@ export class ExcelService {
                         motivo: getField(row, 'Motivo')?.toString().trim() || '',
                         profesional: getField(row, 'Profesional')?.toString().trim() || '',
                         especialidad: getField(row, 'Especialidad')?.toString().trim() || '',
-                        fechaEnvio,
+                        // fechaEnvio: NO SE GUARDA
                         recordatorioEnviado: {
                             email: false,
                             whatsapp: false
