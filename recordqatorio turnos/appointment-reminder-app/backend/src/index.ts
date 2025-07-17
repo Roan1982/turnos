@@ -1,4 +1,4 @@
-import express from 'express';
+import express, { Request, Response } from 'express';
 import cors from 'cors';
 import cron from 'node-cron';
 import dotenv from 'dotenv';
@@ -63,12 +63,14 @@ cron.schedule('*/10 * * * *', async () => {
         });
 
         for (const appointment of appointments) {
+            let enviado = false;
             // Enviar email si no fue enviado
             if (!appointment.recordatorioEnviado.email) {
                 try {
                     await emailService.sendReminder(appointment);
                     appointment.recordatorioEnviado.email = true;
                     appointment.recordatorioEnviado.fechaEnvioEmail = new Date();
+                    enviado = true;
                 } catch (e) {
                     console.error('Error enviando recordatorio por email:', e);
                 }
@@ -87,9 +89,14 @@ cron.schedule('*/10 * * * *', async () => {
                     await whatsappService.sendReminder(appointment);
                     appointment.recordatorioEnviado.whatsapp = true;
                     appointment.recordatorioEnviado.fechaEnvioWhatsApp = new Date();
+                    enviado = true;
                 } catch (e) {
                     console.error('Error enviando recordatorio por WhatsApp:', e);
                 }
+            }
+            // Si se envió al menos uno, actualizar estado a 'notificado'
+            if (enviado && appointment.estado !== 'cancelado') {
+                appointment.estado = 'notificado';
             }
             await appointment.save();
         }
@@ -98,6 +105,7 @@ cron.schedule('*/10 * * * *', async () => {
     }
 });
 
+// @ts-ignore
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
@@ -105,7 +113,7 @@ app.listen(PORT, () => {
 
 
 // Endpoint temporal para debug: muestra los turnos que deberían recibir recordatorio ahora
-app.get('/api/appointments/debug-reminders', async (req, res) => {
+app.get('/api/appointments/debug-reminders', async (req: Request, res: Response) => {
     try {
         const now = new Date();
         const start = new Date(now.getTime() - 5 * 60 * 1000);
@@ -125,7 +133,7 @@ app.get('/api/appointments/debug-reminders', async (req, res) => {
         if (appointments.length === 0) {
             return res.json({ message: 'No hay turnos para enviar recordatorio en este rango de tiempo.' });
         }
-        res.json(appointments.map(a => ({
+        res.json(appointments.map((a: any) => ({
             paciente: a.paciente,
             fecha: a.fecha,
             fechaEnvio: a.fechaEnvio,

@@ -20,7 +20,7 @@ export interface AppointmentInput {
         fechaEnvioEmail?: Date;
         fechaEnvioWhatsApp?: Date;
     };
-    estado: 'pendiente' | 'confirmado' | 'cancelado';
+    estado: 'pendiente' | 'confirmado' | 'cancelado' | 'notificado';
 }
 
 // Interface completa incluyendo campos autogenerados por MongoDB
@@ -52,7 +52,7 @@ const AppointmentSchema = new Schema<AppointmentDocument>({
     },
     estado: { 
         type: String, 
-        enum: ['pendiente', 'confirmado', 'cancelado'],
+        enum: ['pendiente', 'confirmado', 'cancelado', 'notificado'],
         default: 'pendiente'
     }
 }, {
