@@ -5,11 +5,11 @@ export class EmailService {
     private transporter: nodemailer.Transporter;
 
     constructor() {
-        // Configuración para avisos@doctorfia.com en Ferozo
+        // Configuración para avisos@doctorfia.com en Ferozo (puerto 587 STARTTLS)
         this.transporter = nodemailer.createTransport({
             host: 'l0030791.ferozo.com',
-            port: 465,
-            secure: true, // Usar SSL
+            port: 587,
+            secure: false, // Usar STARTTLS
             auth: {
                 user: 'avisos@doctorfia.com',
                 pass: 'Angel2025**'
