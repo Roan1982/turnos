@@ -48,11 +48,10 @@ import { AppointmentModel } from './models/appointment';
 cron.schedule('*/10 * * * *', async () => {
     try {
         const now = new Date();
-        // Buscar turnos cuya fechaEnvio esté dentro del rango de ejecución (margen de 10 minutos)
         const start = new Date(now.getTime() - 5 * 60 * 1000);
         const end = new Date(now.getTime() + 5 * 60 * 1000);
+        console.log('[CRON] Ejecutando. Buscando turnos con fechaEnvio entre', start, 'y', end);
 
-        // Buscar turnos pendientes de notificación (con o sin fechaEnvio cargada)
         const appointments = await AppointmentModel.find({
             recordatorioEnviado: { $exists: true },
             $or: [
@@ -61,19 +60,22 @@ cron.schedule('*/10 * * * *', async () => {
             ],
             estado: { $ne: 'cancelado' }
         });
+        console.log(`[CRON] Turnos pendientes encontrados: ${appointments.length}`);
 
         for (const appointment of appointments) {
             // Si no tiene fechaEnvio, calcularla como 24h antes del turno y guardar
             if (!appointment.fechaEnvio && appointment.fecha) {
                 appointment.fechaEnvio = new Date(new Date(appointment.fecha).getTime() - 24 * 60 * 60 * 1000);
                 await appointment.save();
+                console.log(`[CRON] Calculada y guardada fechaEnvio para turno de ${appointment.paciente}:`, appointment.fechaEnvio);
             }
             // Verificar si la fechaEnvio está en el rango para enviar
             if (!appointment.fechaEnvio) continue;
-            const now = new Date();
-            const start = new Date(now.getTime() - 5 * 60 * 1000);
-            const end = new Date(now.getTime() + 5 * 60 * 1000);
-            if (appointment.fechaEnvio < start || appointment.fechaEnvio > end) continue;
+            if (appointment.fechaEnvio >= start && appointment.fechaEnvio <= end) {
+                console.log(`[CRON] Turno EN RANGO para enviar: paciente=${appointment.paciente}, fechaEnvio=${appointment.fechaEnvio}, email=${appointment.email}, whatsapp=${appointment.telefono}`);
+            } else {
+                continue;
+            }
 
             let enviado = false;
             // Convertir documento Mongoose a objeto plano para los servicios
@@ -116,6 +118,7 @@ cron.schedule('*/10 * * * *', async () => {
             }
             await appointment.save();
         }
+        console.log('[CRON] Fin de ciclo de envío automático.');
     } catch (error) {
         console.error('Error sending reminders:', error);
     }
