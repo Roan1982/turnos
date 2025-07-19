@@ -8,6 +8,7 @@ export interface Recordatorio {
 export interface Appointment {
     _id: string;
     fecha: string; // Fecha real del turno
+    fechaEnvio?: string; // Fecha programada para enviar el recordatorio
     fechaCarga?: string; // Fecha en que se cargó el turno
     hora: string;
     nroDoc: string;

@@ -74,6 +74,45 @@ router.post('/upload', upload.single('file'), async (req: MulterRequest, res: Re
                     error: 'El archivo contiene fechas inválidas'
                 });
             }
+            // Calcular fechaEnvio si no existe y usar hora del turno
+            if (!input.fechaEnvio && input.fecha && input.hora) {
+                // Parsear fecha y hora manualmente para evitar desfases de zona horaria
+                let y, m, d;
+                if (typeof input.fecha === 'string') {
+                    const partes = (input.fecha as string).split(/[\/\-]/);
+                    if (partes.length === 3) {
+                        // DD/MM/YYYY o YYYY-MM-DD
+                        if (parseInt(partes[0], 10) > 31) {
+                            // YYYY-MM-DD
+                            y = parseInt(partes[0], 10);
+                            m = parseInt(partes[1], 10) - 1;
+                            d = parseInt(partes[2], 10);
+                        } else {
+                            // DD/MM/YYYY
+                            d = parseInt(partes[0], 10);
+                            m = parseInt(partes[1], 10) - 1;
+                            y = parseInt(partes[2], 10);
+                        }
+                    } else {
+                        // fallback
+                        const dateObj = new Date(input.fecha as string);
+                        y = dateObj.getFullYear();
+                        m = dateObj.getMonth();
+                        d = dateObj.getDate();
+                    }
+                } else {
+                    const dateObj = new Date(input.fecha as Date);
+                    y = dateObj.getFullYear();
+                    m = dateObj.getMonth();
+                    d = dateObj.getDate();
+                }
+                const [h, min, s] = typeof input.hora === 'string' ? input.hora.split(':').map(Number) : [0, 0, 0];
+                // Construir fecha del turno en local
+                const fechaTurno = new Date(y, m, d, h || 0, min || 0, s || 0, 0);
+                // Restar un día exacto, manteniendo la hora
+                const fechaEnvio = new Date(y, m, d - 1, h || 0, min || 0, s || 0, 0);
+                input.fechaEnvio = fechaEnvio;
+            }
         }
 
         const appointments = await AppointmentModel.create(appointmentInputs);

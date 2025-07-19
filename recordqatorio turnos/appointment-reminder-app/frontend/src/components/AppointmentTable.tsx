@@ -31,7 +31,16 @@ const formatDate = (date: string | Date) => {
 };
 
 const formatDateTime = (date: string | Date) => {
-    return new Date(date).toLocaleString('es-AR');
+    // Mostrar en formato 24 horas
+    return new Date(date).toLocaleString('es-AR', {
+        hour12: false,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
+    });
 };
 
 interface AppointmentTableProps {
@@ -142,24 +151,13 @@ export const AppointmentTable: React.FC<AppointmentTableProps> = ({ appointments
                     </TableHead>
                     <TableBody>
                         {appointments.map((appointment: Appointment) => {
-                            // Buscar la fecha de envío más reciente (email o whatsapp)
-                            let fechaEnvio = '-';
-                            if (appointment.recordatorioEnviado) {
-                                const f1 = appointment.recordatorioEnviado.fechaEnvioEmail;
-                                const f2 = appointment.recordatorioEnviado.fechaEnvioWhatsApp;
-                                if (f1 && f2) {
-                                    fechaEnvio = new Date(f1) > new Date(f2) ? formatDateTime(f1) : formatDateTime(f2);
-                                } else if (f1) {
-                                    fechaEnvio = formatDateTime(f1);
-                                } else if (f2) {
-                                    fechaEnvio = formatDateTime(f2);
-                                }
-                            }
+                            // Mostrar la fecha programada de envío (fechaEnvio)
+                            let fechaEnvioProgramada = appointment.fechaEnvio ? formatDateTime(appointment.fechaEnvio) : '-';
                             return (
                                 <TableRow key={appointment._id}>
                                     <TableCell>{formatDate(appointment.fecha)}</TableCell>
                                     <TableCell>{appointment.fechaCarga ? formatDateTime(appointment.fechaCarga) : '-'}</TableCell>
-                                    <TableCell>{fechaEnvio}</TableCell>
+                                    <TableCell>{fechaEnvioProgramada}</TableCell>
                                     <TableCell>{appointment.hora}</TableCell>
                                     <TableCell>
                                         <Typography variant="body2">{appointment.paciente}</Typography>
