@@ -90,6 +90,21 @@ export const AppointmentTable: React.FC<AppointmentTableProps> = ({ appointments
         }
     };
 
+    // Nueva función para enviar todos los pendientes
+    const handleSendAllPendientes = async () => {
+        try {
+            setLoading(true);
+            await axios.post('http://localhost:3001/api/appointments/enviar-todos-pendientes');
+            await fetchAppointments();
+            setError(null);
+        } catch (err) {
+            setError('Error al enviar todos los pendientes');
+            console.error('Error:', err);
+        } finally {
+            setLoading(false);
+        }
+    };
+
     const getStatusColor = (estado: string) => {
         switch (estado) {
             case 'confirmado':
@@ -124,13 +139,25 @@ export const AppointmentTable: React.FC<AppointmentTableProps> = ({ appointments
         <Box>
             <Box sx={{ mb: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <Typography variant="h6">Turnos y Estado de Notificaciones</Typography>
-                <Button
-                    startIcon={<RefreshIcon />}
-                    onClick={() => fetchAppointments()}
-                    disabled={loading}
-                >
-                    Actualizar
-                </Button>
+                <Box>
+                    <Button
+                        startIcon={<RefreshIcon />}
+                        onClick={() => fetchAppointments()}
+                        disabled={loading}
+                        sx={{ mr: 1 }}
+                    >
+                        Actualizar
+                    </Button>
+                    <Button
+                        variant="contained"
+                        color="secondary"
+                        onClick={handleSendAllPendientes}
+                        disabled={loading}
+                        startIcon={<ScheduleIcon />}
+                    >
+                        Enviar todos los pendientes
+                    </Button>
+                </Box>
             </Box>
             
             <TableContainer component={Paper}>

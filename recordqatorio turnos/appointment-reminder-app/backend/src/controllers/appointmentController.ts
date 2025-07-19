@@ -107,10 +107,10 @@ router.post('/upload', upload.single('file'), async (req: MulterRequest, res: Re
                     d = dateObj.getDate();
                 }
                 const [h, min, s] = typeof input.hora === 'string' ? input.hora.split(':').map(Number) : [0, 0, 0];
-                // Construir fecha del turno en local
-                const fechaTurno = new Date(y, m, d, h || 0, min || 0, s || 0, 0);
-                // Restar un día exacto, manteniendo la hora
-                const fechaEnvio = new Date(y, m, d - 1, h || 0, min || 0, s || 0, 0);
+                // Construir fecha del turno usando UTC para evitar problemas de zona horaria
+                const fechaTurno = new Date(Date.UTC(y, m, d, h || 0, min || 0, s || 0, 0));
+                // Restar exactamente 24 horas y agregar 3 horas para compensar el desfase
+                const fechaEnvio = new Date(fechaTurno.getTime() - 24 * 60 * 60 * 1000 + 3 * 60 * 60 * 1000);
                 input.fechaEnvio = fechaEnvio;
             }
         }
@@ -198,6 +198,45 @@ router.post('/:id/reenviar', async (req: Request, res: Response) => {
     } catch (error) {
         console.error('Error sending notification:', error);
         res.status(500).json({ error: 'Error al enviar el recordatorio' });
+    }
+});
+
+// Ruta temporal para enviar recordatorios a todos los turnos pendientes (sin filtrar por fecha ni hora)
+router.post('/enviar-todos-pendientes', async (req: Request, res: Response) => {
+    try {
+        // Buscar turnos que no tengan recordatorio enviado por email ni whatsapp
+        const pendientes = await AppointmentModel.find({
+            $or: [
+                { 'recordatorioEnviado.email': { $ne: true } },
+                { 'recordatorioEnviado.whatsapp': { $ne: true } }
+            ]
+        });
+        let enviados = 0;
+        for (const turno of pendientes) {
+            try {
+                // Enviar email si no fue enviado
+                if (!turno.recordatorioEnviado.email) {
+                    const emailService = new EmailService();
+                    await emailService.sendReminder(turno);
+                    turno.recordatorioEnviado.email = true;
+                    turno.recordatorioEnviado.fechaEnvioEmail = new Date();
+                }
+                // Enviar whatsapp si no fue enviado
+                if (!turno.recordatorioEnviado.whatsapp) {
+                    await WhatsAppService.sendReminder(turno);
+                    turno.recordatorioEnviado.whatsapp = true;
+                    turno.recordatorioEnviado.fechaEnvioWhatsApp = new Date();
+                }
+                await turno.save();
+                enviados++;
+            } catch (err) {
+                console.error('Error enviando recordatorio:', err);
+            }
+        }
+        res.json({ message: `Recordatorios enviados a ${enviados} turnos pendientes`, total: pendientes.length });
+    } catch (error) {
+        console.error('Error enviando recordatorios masivos:', error);
+        res.status(500).json({ error: 'Error al enviar recordatorios masivos' });
     }
 });
 

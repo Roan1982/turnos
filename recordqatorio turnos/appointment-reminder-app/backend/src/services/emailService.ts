@@ -21,6 +21,16 @@ export class EmailService {
     }
 
     async sendReminder(appointment: Appointment): Promise<void> {
+        // Calcular diferencia entre ahora y el turno
+        const ahora = new Date();
+        const fechaTurno = new Date(appointment.fecha);
+        const diffHoras = Math.abs((fechaTurno.getTime() - ahora.getTime()) / (1000 * 60 * 60));
+        let mensajeFecha = '';
+        if (diffHoras >= 22 && diffHoras <= 26) {
+            mensajeFecha = 'mañana';
+        } else {
+            mensajeFecha = `el día ${fechaTurno.toLocaleDateString()} a las ${appointment.hora}`;
+        }
         const mailOptions = {
             from: 'avisos@doctorfia.com',
             to: appointment.email,
@@ -28,9 +38,9 @@ export class EmailService {
             html: `
                 <h3>Recordatorio de Turno</h3>
                 <p>Estimado/a ${appointment.paciente},</p>
-                <p>Le recordamos que tiene un turno programado para mañana:</p>
+                <p>Le recordamos que tiene un turno programado para ${mensajeFecha}:</p>
                 <ul>
-                    <li><strong>Fecha:</strong> ${appointment.fecha.toLocaleDateString()}</li>
+                    <li><strong>Fecha:</strong> ${fechaTurno.toLocaleDateString()}</li>
                     <li><strong>Hora:</strong> ${appointment.hora}</li>
                     <li><strong>Profesional:</strong> ${appointment.profesional}</li>
                     <li><strong>Especialidad:</strong> ${appointment.especialidad}</li>
@@ -40,7 +50,6 @@ export class EmailService {
                 <p>¡Gracias!</p>
             `
         };
-
         await this.transporter.sendMail(mailOptions);
     }
 }

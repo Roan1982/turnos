@@ -59,14 +59,24 @@ class WhatsAppServiceSingleton {
         if (!this.isReady) {
             throw new Error('El cliente de WhatsApp no está listo. Por favor, escanea el código QR primero.');
         }
+        // Calcular diferencia entre ahora y el turno
+        const ahora = new Date();
+        const fechaTurno = new Date(appointment.fecha);
+        const diffHoras = Math.abs((fechaTurno.getTime() - ahora.getTime()) / (1000 * 60 * 60));
+        let mensajeFecha = '';
+        if (diffHoras >= 22 && diffHoras <= 26) {
+            mensajeFecha = 'mañana';
+        } else {
+            mensajeFecha = `el día ${fechaTurno.toLocaleDateString()} a las ${appointment.hora}`;
+        }
         const message = `
 *Recordatorio de Turno*
 
 Estimado/a ${appointment.paciente},
 
-Le recordamos que tiene un turno programado para mañana:
+Le recordamos que tiene un turno programado para ${mensajeFecha}:
 
-📅 Fecha: ${appointment.fecha.toLocaleDateString()}
+📅 Fecha: ${fechaTurno.toLocaleDateString()}
 🕒 Hora: ${appointment.hora}
 👨‍⚕️ Profesional: ${appointment.profesional}
 🏥 Especialidad: ${appointment.especialidad}
