@@ -309,12 +309,17 @@ router.get('/', async (req: Request, res: Response) => {
                 { 'recordatorioEnviado.email': { $ne: true } },
                 { 'recordatorioEnviado.whatsapp': { $ne: true } }
             ];
-        } else if (notificationStatus === 'notified') {
+            console.log('Aplicando filtro PENDIENTES:', filters);
+        } else if (notificationStatus === 'sent') {
             filters.$or = [
                 { 'recordatorioEnviado.email': true },
                 { 'recordatorioEnviado.whatsapp': true }
             ];
+            console.log('Aplicando filtro NOTIFICADOS:', filters);
         }
+
+        console.log('Filtros finales aplicados:', JSON.stringify(filters, null, 2));
+        console.log('Parámetros de consulta recibidos:', { page, limit, search, profesional, especialidad, notificationStatus });
 
         // Ejecutar consultas
         const [appointments, total] = await Promise.all([
@@ -336,6 +341,13 @@ router.get('/', async (req: Request, res: Response) => {
         const hasNextPage = page < totalPages;
         const hasPrevPage = page > 1;
 
+        console.log(`Resultados encontrados: ${appointments.length} de ${total} total`);
+        console.log('Muestra de appointments:', appointments.slice(0, 2).map(a => ({
+            paciente: a.paciente,
+            emailEnviado: a.recordatorioEnviado.email,
+            whatsappEnviado: a.recordatorioEnviado.whatsapp
+        })));
+
         res.json({
             appointments,
             pagination: {
@@ -347,8 +359,8 @@ router.get('/', async (req: Request, res: Response) => {
                 hasPrevPage
             },
             filterOptions: {
-                profesionales: profesionales.filter(p => p && p.trim() !== '').sort(),
-                especialidades: especialidades.filter(e => e && e.trim() !== '').sort()
+                profesionales: profesionales.filter((p: any) => p && p.trim() !== '').sort(),
+                especialidades: especialidades.filter((e: any) => e && e.trim() !== '').sort()
             }
         });
     } catch (error) {

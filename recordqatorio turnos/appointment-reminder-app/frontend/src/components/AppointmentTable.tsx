@@ -109,9 +109,8 @@ export const AppointmentTable: React.FC<AppointmentTableProps> = ({ appointments
             if (filterSpecialty) params.append('especialidad', filterSpecialty);
             if (filterDateFrom) params.append('fechaDesde', filterDateFrom);
             if (filterDateTo) params.append('fechaHasta', filterDateTo);
-            if (filterNotificationStatus) params.append('notificationStatus', filterNotificationStatus);
             
-            // Aplicar filtro de tab
+            // Aplicar filtro de tab (tiene prioridad sobre filterNotificationStatus)
             switch (tabValue) {
                 case 1: // Pendientes
                     params.append('notificationStatus', 'pending');
@@ -295,6 +294,8 @@ export const AppointmentTable: React.FC<AppointmentTableProps> = ({ appointments
     const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
         setTabValue(newValue);
         setCurrentPage(1); // Reset to first page when changing tabs
+        // Limpiar el filtro de notificación cuando se cambia de pestaña para evitar conflictos
+        setFilterNotificationStatus('');
     };
 
     const handleSearchChange = (event: React.ChangeEvent<HTMLInputElement>) => {
