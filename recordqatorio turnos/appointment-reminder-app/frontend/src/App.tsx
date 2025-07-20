@@ -1,12 +1,19 @@
 import React, { useState } from 'react';
 import { WhatsAppQrModal } from './components/WhatsAppQrModal';
-import { Container, Typography, Box, Alert, Tabs, Tab, Fab, Tooltip } from '@mui/material';
+import { Container, Typography, Box, Alert, Tabs, Tab, Fab, Tooltip, Paper, List, ListItem, ListItemText, Divider } from '@mui/material';
 import WhatsAppIcon from '@mui/icons-material/WhatsApp';
 import { FileUpload } from './components/FileUpload';
 import { AppointmentTable } from './components/AppointmentTable';
 import axios from 'axios';
 
 import { Appointment } from './shared/types';
+
+interface ProcessingResult {
+    exitosos: any[];
+    duplicados: any[];
+    errores: any[];
+    totalProcesados: number;
+}
 
 interface TabPanelProps {
     children?: React.ReactNode;
@@ -39,6 +46,7 @@ function App() {
     const [error, setError] = useState<string | null>(null);
     const [tabValue, setTabValue] = useState(0);
     const [qrOpen, setQrOpen] = useState(false);
+    const [processingResult, setProcessingResult] = useState<ProcessingResult | null>(null);
 
     const handleFileUpload = async (file: File) => {
         try {
@@ -57,10 +65,24 @@ function App() {
 
             console.log('Respuesta del servidor:', response.data);
 
-            if (response.data.appointments && Array.isArray(response.data.appointments)) {
+            // Manejar la nueva estructura de respuesta con resultados detallados
+            if (response.data.resultados) {
+                setProcessingResult(response.data.resultados);
+                setError(null);
+                
+                // Si hubo turnos exitosos, actualizar la lista
+                if (response.data.resultados.exitosos.length > 0) {
+                    // Recargar la lista completa de turnos
+                    const appointmentsResponse = await axios.get('http://localhost:3001/api/appointments');
+                    setAppointments(appointmentsResponse.data);
+                }
+                
+                // Cambiar a la pestaña de turnos después del procesamiento
+                setTabValue(1);
+            } else if (response.data.appointments && Array.isArray(response.data.appointments)) {
+                // Respuesta en formato anterior (por compatibilidad)
                 setAppointments(response.data.appointments);
                 setError(null);
-                // Cambiar a la pestaña de turnos después de una carga exitosa
                 setTabValue(1);
             } else {
                 setError('La respuesta del servidor no tiene el formato esperado');
@@ -68,6 +90,7 @@ function App() {
         } catch (err: any) {
             const errorMessage = err.response?.data?.error || 'Error al procesar el archivo. Por favor, verifica que sea un archivo Excel válido.';
             setError(errorMessage);
+            setProcessingResult(null);
             console.error('Error:', err);
         }
     };
@@ -104,6 +127,66 @@ function App() {
                         <Alert severity="error" sx={{ mt: 2 }}>
                             {error}
                         </Alert>
+                    )}
+                    {processingResult && (
+                        <Box sx={{ mt: 2 }}>
+                            <Alert severity="info" sx={{ mb: 2 }}>
+                                Procesamiento completado: {processingResult.exitosos.length} exitosos, {processingResult.duplicados.length} duplicados, {processingResult.errores.length} errores de {processingResult.totalProcesados} registros.
+                            </Alert>
+                            
+                            {processingResult.exitosos.length > 0 && (
+                                <Paper sx={{ p: 2, mb: 2 }}>
+                                    <Typography variant="h6" color="success.main">✅ Turnos cargados exitosamente ({processingResult.exitosos.length})</Typography>
+                                    <List dense>
+                                        {processingResult.exitosos.slice(0, 5).map((turno: any, index: number) => (
+                                            <ListItem key={index}>
+                                                <ListItemText 
+                                                    primary={`Fila ${turno.fila}: ${turno.paciente}`}
+                                                    secondary={`${new Date(turno.fecha).toLocaleDateString('es-AR')} ${turno.hora}`}
+                                                />
+                                            </ListItem>
+                                        ))}
+                                        {processingResult.exitosos.length > 5 && (
+                                            <ListItem>
+                                                <ListItemText primary={`... y ${processingResult.exitosos.length - 5} más`} />
+                                            </ListItem>
+                                        )}
+                                    </List>
+                                </Paper>
+                            )}
+
+                            {processingResult.duplicados.length > 0 && (
+                                <Paper sx={{ p: 2, mb: 2 }}>
+                                    <Typography variant="h6" color="warning.main">⚠️ Turnos duplicados (no cargados) ({processingResult.duplicados.length})</Typography>
+                                    <List dense>
+                                        {processingResult.duplicados.map((turno: any, index: number) => (
+                                            <ListItem key={index}>
+                                                <ListItemText 
+                                                    primary={`Fila ${turno.fila}: ${turno.paciente}`}
+                                                    secondary={`${new Date(turno.fecha).toLocaleDateString('es-AR')} ${turno.hora} - ${turno.error}`}
+                                                />
+                                            </ListItem>
+                                        ))}
+                                    </List>
+                                </Paper>
+                            )}
+
+                            {processingResult.errores.length > 0 && (
+                                <Paper sx={{ p: 2, mb: 2 }}>
+                                    <Typography variant="h6" color="error.main">❌ Errores en registros ({processingResult.errores.length})</Typography>
+                                    <List dense>
+                                        {processingResult.errores.map((error: any, index: number) => (
+                                            <ListItem key={index}>
+                                                <ListItemText 
+                                                    primary={`Fila ${error.fila}: ${error.error}`}
+                                                    secondary={error.datos ? `${error.datos.paciente || 'Sin nombre'} - ${error.datos.fecha || 'Sin fecha'}` : 'Sin datos'}
+                                                />
+                                            </ListItem>
+                                        ))}
+                                    </List>
+                                </Paper>
+                            )}
+                        </Box>
                     )}
                 </TabPanel>
                 <TabPanel value={tabValue} index={1}>

@@ -18,6 +18,36 @@ interface MulterRequest extends Request {
     file?: Express.Multer.File;
 }
 
+// Interfaces para el procesamiento de resultados
+interface TurnoExitoso {
+    fila: number;
+    id: any;
+    paciente: string;
+    fecha: Date;
+    hora: string;
+}
+
+interface TurnoDuplicado {
+    fila: number;
+    paciente: string;
+    fecha: Date;
+    hora: string;
+    error: string;
+}
+
+interface TurnoError {
+    fila: number;
+    error: string;
+    datos: AppointmentInput;
+}
+
+interface ResultadosProcesamiento {
+    exitosos: TurnoExitoso[];
+    duplicados: TurnoDuplicado[];
+    errores: TurnoError[];
+    totalProcesados: number;
+}
+
 // Configurar multer para aceptar solo archivos Excel
 const storage = multer.memoryStorage();
 const fileFilter = (req: Request, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
@@ -67,59 +97,113 @@ router.post('/upload', upload.single('file'), async (req: MulterRequest, res: Re
         
         console.log('Ejemplo del primer turno:', JSON.stringify(appointmentInputs[0], null, 2));
 
-        // Validar que todas las fechas sean válidas
-        for (const input of appointmentInputs) {
-            if (!(input.fecha instanceof Date) || isNaN(input.fecha.getTime())) {
-                return res.status(400).json({
-                    error: 'El archivo contiene fechas inválidas'
-                });
-            }
-            // Calcular fechaEnvio si no existe y usar hora del turno
-            if (!input.fechaEnvio && input.fecha && input.hora) {
-                // Parsear fecha y hora manualmente para evitar desfases de zona horaria
-                let y, m, d;
-                if (typeof input.fecha === 'string') {
-                    const partes = (input.fecha as string).split(/[\/\-]/);
-                    if (partes.length === 3) {
-                        // DD/MM/YYYY o YYYY-MM-DD
-                        if (parseInt(partes[0], 10) > 31) {
-                            // YYYY-MM-DD
-                            y = parseInt(partes[0], 10);
-                            m = parseInt(partes[1], 10) - 1;
-                            d = parseInt(partes[2], 10);
+        const resultados: ResultadosProcesamiento = {
+            exitosos: [],
+            duplicados: [],
+            errores: [],
+            totalProcesados: appointmentInputs.length
+        };
+
+        // Procesar cada turno individualmente para manejar duplicados y errores
+        for (let i = 0; i < appointmentInputs.length; i++) {
+            const input = appointmentInputs[i];
+            const numeroFila = i + 2; // +2 porque Excel empieza en 1 y la primera fila son headers
+            
+            try {
+                // Validar fecha
+                if (!(input.fecha instanceof Date) || isNaN(input.fecha.getTime())) {
+                    resultados.errores.push({
+                        fila: numeroFila,
+                        error: 'Fecha inválida',
+                        datos: input
+                    });
+                    continue;
+                }
+
+                // Calcular fechaEnvio si no existe y usar hora del turno
+                if (!input.fechaEnvio && input.fecha && input.hora) {
+                    // Parsear fecha y hora manualmente para evitar desfases de zona horaria
+                    let y, m, d;
+                    if (typeof input.fecha === 'string') {
+                        const partes = (input.fecha as string).split(/[\/\-]/);
+                        if (partes.length === 3) {
+                            // DD/MM/YYYY o YYYY-MM-DD
+                            if (parseInt(partes[0], 10) > 31) {
+                                // YYYY-MM-DD
+                                y = parseInt(partes[0], 10);
+                                m = parseInt(partes[1], 10) - 1;
+                                d = parseInt(partes[2], 10);
+                            } else {
+                                // DD/MM/YYYY
+                                d = parseInt(partes[0], 10);
+                                m = parseInt(partes[1], 10) - 1;
+                                y = parseInt(partes[2], 10);
+                            }
                         } else {
-                            // DD/MM/YYYY
-                            d = parseInt(partes[0], 10);
-                            m = parseInt(partes[1], 10) - 1;
-                            y = parseInt(partes[2], 10);
+                            // fallback
+                            const dateObj = new Date(input.fecha as string);
+                            y = dateObj.getFullYear();
+                            m = dateObj.getMonth();
+                            d = dateObj.getDate();
                         }
                     } else {
-                        // fallback
-                        const dateObj = new Date(input.fecha as string);
+                        const dateObj = new Date(input.fecha as Date);
                         y = dateObj.getFullYear();
                         m = dateObj.getMonth();
                         d = dateObj.getDate();
                     }
-                } else {
-                    const dateObj = new Date(input.fecha as Date);
-                    y = dateObj.getFullYear();
-                    m = dateObj.getMonth();
-                    d = dateObj.getDate();
+                    const [h, min, s] = typeof input.hora === 'string' ? input.hora.split(':').map(Number) : [0, 0, 0];
+                    // Construir fecha del turno usando UTC para evitar problemas de zona horaria
+                    const fechaTurno = new Date(Date.UTC(y, m, d, h || 0, min || 0, s || 0, 0));
+                    // Restar exactamente 24 horas y agregar 3 horas para compensar el desfase
+                    const fechaEnvio = new Date(fechaTurno.getTime() - 24 * 60 * 60 * 1000 + 3 * 60 * 60 * 1000);
+                    input.fechaEnvio = fechaEnvio;
                 }
-                const [h, min, s] = typeof input.hora === 'string' ? input.hora.split(':').map(Number) : [0, 0, 0];
-                // Construir fecha del turno usando UTC para evitar problemas de zona horaria
-                const fechaTurno = new Date(Date.UTC(y, m, d, h || 0, min || 0, s || 0, 0));
-                // Restar exactamente 24 horas y agregar 3 horas para compensar el desfase
-                const fechaEnvio = new Date(fechaTurno.getTime() - 24 * 60 * 60 * 1000 + 3 * 60 * 60 * 1000);
-                input.fechaEnvio = fechaEnvio;
+
+                // Intentar crear el turno
+                const appointment = await AppointmentModel.create(input);
+                resultados.exitosos.push({
+                    fila: numeroFila,
+                    id: appointment._id,
+                    paciente: appointment.paciente,
+                    fecha: appointment.fecha,
+                    hora: appointment.hora
+                });
+
+            } catch (error: any) {
+                if (error?.code === 11000) {
+                    // Error de duplicado
+                    resultados.duplicados.push({
+                        fila: numeroFila,
+                        paciente: input.paciente,
+                        fecha: input.fecha,
+                        hora: input.hora,
+                        error: 'Turno duplicado (ya existe en la base de datos)'
+                    });
+                } else {
+                    // Otros errores
+                    const errorMsg = error instanceof Error ? error.message : 'Error desconocido';
+                    resultados.errores.push({
+                        fila: numeroFila,
+                        error: errorMsg,
+                        datos: input
+                    });
+                }
+                console.error(`Error en fila ${numeroFila}:`, error);
             }
         }
 
-        const appointments = await AppointmentModel.create(appointmentInputs);
+        // Respuesta detallada
+        const mensaje = [
+            `Procesamiento completado.`,
+            `Exitosos: ${resultados.exitosos.length}`,
+            `Duplicados: ${resultados.duplicados.length}`,
+            `Errores: ${resultados.errores.length}`
+        ].join(' | ');
 
         res.json({
-            message: 'Archivo procesado correctamente',
-            appointments
+            message: mensaje,
+            resultados: resultados
         });
 
     } catch (error) {
@@ -173,11 +257,17 @@ router.post('/:id/reenviar', async (req: Request, res: Response) => {
 
         try {
             if (tipo === 'email') {
+                if (!appointment.email || appointment.email.trim() === '') {
+                    return res.status(400).json({ error: 'Este turno no tiene email configurado' });
+                }
                 const emailService = new EmailService();
                 await emailService.sendReminder(appointment);
                 appointment.recordatorioEnviado.email = true;
                 appointment.recordatorioEnviado.fechaEnvioEmail = new Date();
             } else if (tipo === 'whatsapp') {
+                if (!appointment.telefono || appointment.telefono.trim() === '') {
+                    return res.status(400).json({ error: 'Este turno no tiene teléfono configurado' });
+                }
                 await WhatsAppService.sendReminder(appointment);
                 appointment.recordatorioEnviado.whatsapp = true;
                 appointment.recordatorioEnviado.fechaEnvioWhatsApp = new Date();
@@ -212,28 +302,48 @@ router.post('/enviar-todos-pendientes', async (req: Request, res: Response) => {
             ]
         });
         let enviados = 0;
+        let errores = 0;
+        
         for (const turno of pendientes) {
             try {
-                // Enviar email si no fue enviado
-                if (!turno.recordatorioEnviado.email) {
-                    const emailService = new EmailService();
-                    await emailService.sendReminder(turno);
-                    turno.recordatorioEnviado.email = true;
-                    turno.recordatorioEnviado.fechaEnvioEmail = new Date();
+                // Enviar email si no fue enviado y tiene email válido
+                if (!turno.recordatorioEnviado.email && turno.email && turno.email.trim() !== '') {
+                    try {
+                        const emailService = new EmailService();
+                        await emailService.sendReminder(turno);
+                        turno.recordatorioEnviado.email = true;
+                        turno.recordatorioEnviado.fechaEnvioEmail = new Date();
+                    } catch (emailError) {
+                        console.error('Error enviando email:', emailError);
+                        errores++;
+                    }
                 }
-                // Enviar whatsapp si no fue enviado
-                if (!turno.recordatorioEnviado.whatsapp) {
-                    await WhatsAppService.sendReminder(turno);
-                    turno.recordatorioEnviado.whatsapp = true;
-                    turno.recordatorioEnviado.fechaEnvioWhatsApp = new Date();
+                
+                // Enviar whatsapp si no fue enviado y tiene teléfono válido
+                if (!turno.recordatorioEnviado.whatsapp && turno.telefono && turno.telefono.trim() !== '') {
+                    try {
+                        await WhatsAppService.sendReminder(turno);
+                        turno.recordatorioEnviado.whatsapp = true;
+                        turno.recordatorioEnviado.fechaEnvioWhatsApp = new Date();
+                    } catch (whatsappError) {
+                        console.error('Error enviando WhatsApp:', whatsappError);
+                        errores++;
+                    }
                 }
+                
                 await turno.save();
                 enviados++;
             } catch (err) {
                 console.error('Error enviando recordatorio:', err);
+                errores++;
             }
         }
-        res.json({ message: `Recordatorios enviados a ${enviados} turnos pendientes`, total: pendientes.length });
+        
+        res.json({ 
+            message: `Recordatorios enviados a ${enviados} turnos pendientes`, 
+            total: pendientes.length,
+            errores: errores
+        });
     } catch (error) {
         console.error('Error enviando recordatorios masivos:', error);
         res.status(500).json({ error: 'Error al enviar recordatorios masivos' });

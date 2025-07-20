@@ -125,26 +125,34 @@ export class ExcelService {
                         0,
                         0
                     ));
-                    // NO guardar fechaEnvio, solo la fecha real del turno
-                    const appointment = {
+                    
+                    // Crear appointment con campos opcionales manejados correctamente
+                    const appointment: any = {
                         fecha: fechaTurno, // fecha y hora exacta del Excel
                         fechaCarga: new Date(),
                         hora: horaStr,
                         nroDoc: getField(row, 'Nro Doc')?.toString().trim() || '',
                         paciente: getField(row, 'Paciente')?.toString().trim() || '',
-                        telefono: getField(row, 'Telefono')?.toString().trim() || '',
-                        email: getField(row, 'Email')?.toString().trim() || '',
                         confirma: getField(row, 'Confirma')?.toString().trim() || '',
                         motivo: getField(row, 'Motivo')?.toString().trim() || '',
                         profesional: getField(row, 'Profesional')?.toString().trim() || '',
                         especialidad: getField(row, 'Especialidad')?.toString().trim() || '',
-                        // fechaEnvio: NO SE GUARDA
                         recordatorioEnviado: {
                             email: false,
                             whatsapp: false
                         },
                         estado: "pendiente" as "pendiente"
                     };
+                    
+                    // Solo agregar email si tiene valor válido
+                    if (emailValue && emailValue.length > 0) {
+                        appointment.email = emailValue;
+                    }
+                    
+                    // Solo agregar teléfono si tiene valor válido
+                    if (telefonoValue && telefonoValue.length > 0) {
+                        appointment.telefono = telefonoValue;
+                    }
 
                     console.log(`Fila ${index + 1} procesada correctamente:`, appointment);
                     return appointment;

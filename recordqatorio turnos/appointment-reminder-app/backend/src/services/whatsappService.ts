@@ -56,9 +56,15 @@ class WhatsAppServiceSingleton {
     }
 
     public async sendReminder(appointment: Appointment): Promise<void> {
+        // Verificar que el appointment tenga teléfono antes de intentar enviar
+        if (!appointment.telefono || appointment.telefono.trim() === '') {
+            throw new Error('No se puede enviar WhatsApp: El turno no tiene teléfono configurado');
+        }
+
         if (!this.isReady) {
             throw new Error('El cliente de WhatsApp no está listo. Por favor, escanea el código QR primero.');
         }
+        
         // Calcular diferencia entre ahora y el turno
         const ahora = new Date();
         const fechaTurno = new Date(appointment.fecha);
@@ -102,7 +108,8 @@ Escríbanos a nuestra línea de WhatsApp: *11 4162-8577*
 
 ¡Gracias por confiar en CMF Centro Médico Dr. Fia!`;
         try {
-            let phoneNumber = appointment.telefono.replace(/\D/g, '');
+            // Como ya verificamos que telefono existe, podemos usar el operador de aserción
+            let phoneNumber = appointment.telefono!.replace(/\D/g, '');
             if (!phoneNumber.startsWith('549')) {
                 phoneNumber = '549' + phoneNumber;
             }
@@ -114,8 +121,14 @@ Escríbanos a nuestra línea de WhatsApp: *11 4162-8577*
             throw error;
         }
     }
+
+    // Método estático para compatibilidad con el controlador
+    public static async sendReminder(appointment: Appointment): Promise<void> {
+        const instance = WhatsAppServiceSingleton.getInstance();
+        return instance.sendReminder(appointment);
+    }
 }
 
 
-const whatsappServiceInstance = WhatsAppServiceSingleton.getInstance();
-export { whatsappServiceInstance as WhatsAppService };
+// Exportar la clase para poder usar métodos estáticos
+export { WhatsAppServiceSingleton as WhatsAppService };

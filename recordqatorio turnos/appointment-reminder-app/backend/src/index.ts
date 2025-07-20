@@ -6,18 +6,36 @@ import { appointmentRouter } from './controllers/appointmentController';
 import { EmailService } from './services/emailService';
 import { WhatsAppService } from './services/whatsappService';
 import { connectToDatabase } from './config/database';
+import { AppointmentModel } from './models/appointment';
 import qrcode from 'qrcode';
 
 dotenv.config();
 
 const app = express();
 const emailService = new EmailService();
-// WhatsAppService ya es la instancia singleton exportada correctamente
-const whatsappService = WhatsAppService;
+// Obtener la instancia singleton de WhatsApp
+const whatsappService = WhatsAppService.getInstance();
 console.log('[INIT] WhatsAppService inicializado:', typeof whatsappService, whatsappService && whatsappService.getIsReady && whatsappService.getIsReady());
 
 // Conectar a MongoDB
-connectToDatabase().catch(console.error);
+connectToDatabase().then(async () => {
+    console.log('[DB] Conectado a MongoDB');
+    
+    // Crear índice único para evitar duplicados
+    try {
+        await AppointmentModel.collection.createIndex(
+            { fecha: 1, hora: 1, nroDoc: 1, paciente: 1 },
+            { 
+                unique: true,
+                name: 'appointment_unique_index',
+                background: true
+            }
+        );
+        console.log('[DB] Índice único creado/verificado correctamente');
+    } catch (error) {
+        console.log('[DB] El índice único ya existe o hubo un error:', (error as Error).message);
+    }
+}).catch(console.error);
 
 app.use(cors());
 app.use(express.json());
@@ -43,7 +61,6 @@ app.use('/api/appointments', appointmentRouter);
 
 // Programar el envío de recordatorios exactamente 24 horas antes del turno
 // Se ejecuta cada 10 minutos para no perder ningún turno
-import { AppointmentModel } from './models/appointment';
 
 cron.schedule('*/10 * * * *', async () => {
     try {

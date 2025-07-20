@@ -21,6 +21,11 @@ export class EmailService {
     }
 
     async sendReminder(appointment: Appointment): Promise<void> {
+        // Verificar que el appointment tenga email antes de intentar enviar
+        if (!appointment.email || appointment.email.trim() === '') {
+            throw new Error('No se puede enviar email: El turno no tiene email configurado');
+        }
+        
         // Calcular diferencia entre ahora y el turno
         const ahora = new Date();
         const fechaTurno = new Date(appointment.fecha);

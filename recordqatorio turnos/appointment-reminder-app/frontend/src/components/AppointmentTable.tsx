@@ -54,18 +54,20 @@ export const AppointmentTable: React.FC<AppointmentTableProps> = ({ appointments
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [tabValue, setTabValue] = useState(0); // 0: Todos, 1: Pendientes, 2: Notificados
+    const [refreshing, setRefreshing] = useState(false);
 
     const fetchAppointments = async () => {
         try {
-            setLoading(true);
+            setRefreshing(true);
             const response = await axios.get('http://localhost:3001/api/appointments');
             setAppointments(response.data);
             setError(null);
+            console.log('Datos actualizados:', response.data.length, 'turnos');
         } catch (err) {
             setError('Error al cargar los turnos');
             console.error('Error:', err);
         } finally {
-            setLoading(false);
+            setRefreshing(false);
         }
     };
 
@@ -79,12 +81,26 @@ export const AppointmentTable: React.FC<AppointmentTableProps> = ({ appointments
         }
     }, [initialAppointments]);
 
+    // Force re-render cuando cambian los appointments para actualizar contadores
+    useEffect(() => {
+        console.log('Appointments actualizados:', appointments.length);
+    }, [appointments]);
+
     const handleResendNotification = async (appointmentId: string, tipo: 'email' | 'whatsapp') => {
         try {
             setLoading(true);
-            await axios.post(`http://localhost:3001/api/appointments/${appointmentId}/reenviar`, { tipo });
-            await fetchAppointments(); // Recargar los datos
             setError(null);
+            
+            await axios.post(`http://localhost:3001/api/appointments/${appointmentId}/reenviar`, { tipo });
+            
+            // Esperar un momento para que se procese el envío
+            await new Promise(resolve => setTimeout(resolve, 500));
+            
+            // Recargar los datos para mostrar el cambio inmediatamente
+            await fetchAppointments();
+            
+            console.log(`Recordatorio ${tipo} enviado y datos actualizados`);
+            
         } catch (err) {
             setError(`Error al reenviar ${tipo}`);
             console.error('Error:', err);
@@ -93,14 +109,30 @@ export const AppointmentTable: React.FC<AppointmentTableProps> = ({ appointments
         }
     };
 
-    // Nueva función para enviar todos los pendientes con auto-refresh
+    // Nueva función para enviar todos los pendientes con auto-refresh mejorado
     const handleSendAllPendientes = async () => {
         try {
             setLoading(true);
-            await axios.post('http://localhost:3001/api/appointments/enviar-todos-pendientes');
-            // Refrescar automáticamente la página después del envío
-            await fetchAppointments();
             setError(null);
+            
+            // Enviar recordatorios
+            const response = await axios.post('http://localhost:3001/api/appointments/enviar-todos-pendientes');
+            console.log('Respuesta del envío:', response.data);
+            
+            // Polling agresivo para asegurar actualización
+            let attempts = 0;
+            const maxAttempts = 5;
+            
+            while (attempts < maxAttempts) {
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                await fetchAppointments();
+                attempts++;
+                console.log(`Intento de actualización ${attempts}/${maxAttempts}`);
+            }
+            
+            // Mostrar mensaje de éxito
+            console.log('Recordatorios enviados y datos actualizados exitosamente');
+            
         } catch (err) {
             setError('Error al enviar todos los pendientes');
             console.error('Error:', err);
@@ -164,24 +196,29 @@ export const AppointmentTable: React.FC<AppointmentTableProps> = ({ appointments
     return (
         <Box>
             <Box sx={{ mb: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <Typography variant="h6">Turnos y Estado de Notificaciones</Typography>
+                <Typography variant="h6">
+                    Turnos y Estado de Notificaciones
+                    {refreshing && <Typography component="span" variant="caption" color="primary" sx={{ ml: 1 }}>
+                        (Actualizando...)
+                    </Typography>}
+                </Typography>
                 <Box>
                     <Button
                         startIcon={<RefreshIcon />}
                         onClick={() => fetchAppointments()}
-                        disabled={loading}
+                        disabled={loading || refreshing}
                         sx={{ mr: 1 }}
                     >
-                        Actualizar
+                        {refreshing ? 'Actualizando...' : 'Actualizar'}
                     </Button>
                     <Button
                         variant="contained"
                         color="secondary"
                         onClick={handleSendAllPendientes}
-                        disabled={loading}
+                        disabled={loading || refreshing}
                         startIcon={<ScheduleIcon />}
                     >
-                        Enviar todos los pendientes
+                        {loading ? 'Enviando...' : 'Enviar todos los pendientes'}
                     </Button>
                 </Box>
             </Box>
