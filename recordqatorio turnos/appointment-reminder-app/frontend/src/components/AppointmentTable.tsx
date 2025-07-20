@@ -12,7 +12,9 @@ import {
     Typography,
     Box,
     IconButton,
-    Tooltip
+    Tooltip,
+    Tabs,
+    Tab
 } from '@mui/material';
 import {
     Email as EmailIcon,
@@ -51,6 +53,7 @@ export const AppointmentTable: React.FC<AppointmentTableProps> = ({ appointments
     const [appointments, setAppointments] = useState<Appointment[]>(initialAppointments || []);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [tabValue, setTabValue] = useState(0); // 0: Todos, 1: Pendientes, 2: Notificados
 
     const fetchAppointments = async () => {
         try {
@@ -90,11 +93,12 @@ export const AppointmentTable: React.FC<AppointmentTableProps> = ({ appointments
         }
     };
 
-    // Nueva función para enviar todos los pendientes
+    // Nueva función para enviar todos los pendientes con auto-refresh
     const handleSendAllPendientes = async () => {
         try {
             setLoading(true);
             await axios.post('http://localhost:3001/api/appointments/enviar-todos-pendientes');
+            // Refrescar automáticamente la página después del envío
             await fetchAppointments();
             setError(null);
         } catch (err) {
@@ -127,6 +131,26 @@ export const AppointmentTable: React.FC<AppointmentTableProps> = ({ appointments
         return <ErrorIcon color="error" />;
     };
 
+    // Función para filtrar turnos según la pestaña seleccionada
+    const getFilteredAppointments = () => {
+        switch (tabValue) {
+            case 1: // Pendientes
+                return appointments.filter(appointment => 
+                    !appointment.recordatorioEnviado.email && !appointment.recordatorioEnviado.whatsapp
+                );
+            case 2: // Notificados
+                return appointments.filter(appointment => 
+                    appointment.recordatorioEnviado.email || appointment.recordatorioEnviado.whatsapp
+                );
+            default: // Todos
+                return appointments;
+        }
+    };
+
+    const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
+        setTabValue(newValue);
+    };
+
     if (loading) {
         return <Typography>Cargando turnos...</Typography>;
     }
@@ -134,6 +158,8 @@ export const AppointmentTable: React.FC<AppointmentTableProps> = ({ appointments
     if (error) {
         return <Typography color="error">{error}</Typography>;
     }
+
+    const filteredAppointments = getFilteredAppointments();
 
     return (
         <Box>
@@ -159,6 +185,15 @@ export const AppointmentTable: React.FC<AppointmentTableProps> = ({ appointments
                     </Button>
                 </Box>
             </Box>
+
+            {/* Pestañas para filtrar */}
+            <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}>
+                <Tabs value={tabValue} onChange={handleTabChange} aria-label="Filtros de turnos">
+                    <Tab label={`Todos (${appointments.length})`} />
+                    <Tab label={`Pendientes (${appointments.filter(a => !a.recordatorioEnviado.email && !a.recordatorioEnviado.whatsapp).length})`} />
+                    <Tab label={`Notificados (${appointments.filter(a => a.recordatorioEnviado.email || a.recordatorioEnviado.whatsapp).length})`} />
+                </Tabs>
+            </Box>
             
             <TableContainer component={Paper}>
                 <Table>
@@ -177,7 +212,7 @@ export const AppointmentTable: React.FC<AppointmentTableProps> = ({ appointments
                         </TableRow>
                     </TableHead>
                     <TableBody>
-                        {appointments.map((appointment: Appointment) => {
+                        {filteredAppointments.map((appointment: Appointment) => {
                             // Mostrar la fecha programada de envío (fechaEnvio)
                             let fechaEnvioProgramada = appointment.fechaEnvio ? formatDateTime(appointment.fechaEnvio) : '-';
                             return (
