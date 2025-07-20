@@ -219,11 +219,138 @@ router.post('/upload', upload.single('file'), async (req: MulterRequest, res: Re
     }
 });
 
-// Get all appointments
+// Get appointment counts for tabs
+router.get('/counts', async (req: Request, res: Response) => {
+    try {
+        const total = await AppointmentModel.countDocuments();
+        const pending = await AppointmentModel.countDocuments({
+            $and: [
+                { 'recordatorioEnviado.email': { $ne: true } },
+                { 'recordatorioEnviado.whatsapp': { $ne: true } }
+            ]
+        });
+        const notified = await AppointmentModel.countDocuments({
+            $or: [
+                { 'recordatorioEnviado.email': true },
+                { 'recordatorioEnviado.whatsapp': true }
+            ]
+        });
+
+        res.json({
+            total,
+            pending,
+            notified
+        });
+    } catch (error) {
+        console.error('Error fetching appointment counts:', error);
+        res.status(500).json({ error: 'Error al obtener contadores de turnos' });
+    }
+});
+
+// Get all appointments with search, filters and pagination
 router.get('/', async (req: Request, res: Response) => {
     try {
-        const appointments = await AppointmentModel.find().sort({ fecha: 1, hora: 1 });
-        res.json(appointments);
+        // Parámetros de query
+        const page = parseInt(req.query.page as string) || 1;
+        const limit = parseInt(req.query.limit as string) || 10;
+        const search = req.query.search as string || '';
+        const estado = req.query.estado as string || '';
+        const profesional = req.query.profesional as string || '';
+        const especialidad = req.query.especialidad as string || '';
+        const fechaDesde = req.query.fechaDesde as string || '';
+        const fechaHasta = req.query.fechaHasta as string || '';
+        const notificationStatus = req.query.notificationStatus as string || ''; // 'pending', 'notified', 'all'
+
+        const skip = (page - 1) * limit;
+
+        // Construir filtros
+        const filters: any = {};
+
+        // Filtro de búsqueda (busca en paciente, nroDoc, profesional)
+        if (search) {
+            filters.$or = [
+                { paciente: { $regex: search, $options: 'i' } },
+                { nroDoc: { $regex: search, $options: 'i' } },
+                { profesional: { $regex: search, $options: 'i' } },
+                { motivo: { $regex: search, $options: 'i' } }
+            ];
+        }
+
+        // Filtros específicos
+        if (estado) {
+            filters.estado = estado;
+        }
+
+        if (profesional) {
+            filters.profesional = { $regex: profesional, $options: 'i' };
+        }
+
+        if (especialidad) {
+            filters.especialidad = { $regex: especialidad, $options: 'i' };
+        }
+
+        // Filtro de fechas
+        if (fechaDesde || fechaHasta) {
+            filters.fecha = {};
+            if (fechaDesde) {
+                filters.fecha.$gte = new Date(fechaDesde);
+            }
+            if (fechaHasta) {
+                // Incluir todo el día hasta las 23:59:59
+                const fechaHastaFin = new Date(fechaHasta);
+                fechaHastaFin.setHours(23, 59, 59, 999);
+                filters.fecha.$lte = fechaHastaFin;
+            }
+        }
+
+        // Filtro de estado de notificación
+        if (notificationStatus === 'pending') {
+            filters.$and = [
+                { 'recordatorioEnviado.email': { $ne: true } },
+                { 'recordatorioEnviado.whatsapp': { $ne: true } }
+            ];
+        } else if (notificationStatus === 'notified') {
+            filters.$or = [
+                { 'recordatorioEnviado.email': true },
+                { 'recordatorioEnviado.whatsapp': true }
+            ];
+        }
+
+        // Ejecutar consultas
+        const [appointments, total] = await Promise.all([
+            AppointmentModel.find(filters)
+                .sort({ fecha: 1, hora: 1 })
+                .skip(skip)
+                .limit(limit),
+            AppointmentModel.countDocuments(filters)
+        ]);
+
+        // Obtener datos para filtros (profesionales y especialidades únicos)
+        const [profesionales, especialidades] = await Promise.all([
+            AppointmentModel.distinct('profesional'),
+            AppointmentModel.distinct('especialidad')
+        ]);
+
+        // Calcular información de paginación
+        const totalPages = Math.ceil(total / limit);
+        const hasNextPage = page < totalPages;
+        const hasPrevPage = page > 1;
+
+        res.json({
+            appointments,
+            pagination: {
+                currentPage: page,
+                totalPages,
+                totalItems: total,
+                itemsPerPage: limit,
+                hasNextPage,
+                hasPrevPage
+            },
+            filterOptions: {
+                profesionales: profesionales.filter(p => p && p.trim() !== '').sort(),
+                especialidades: especialidades.filter(e => e && e.trim() !== '').sort()
+            }
+        });
     } catch (error) {
         console.error('Error fetching appointments:', error);
         res.status(500).json({ error: 'Error al obtener los turnos' });
