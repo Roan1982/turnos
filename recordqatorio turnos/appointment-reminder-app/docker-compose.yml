@@ -1,35 +1,6 @@
 version: '3.8'
 
 services:
-  backend:
-    build: ./backend
-    ports:
-      - "3001:3001"
-    environment:
-      - NODE_ENV=development
-      - EMAIL_USER=your-email@gmail.com
-      - EMAIL_PASS=your-email-password
-      - MONGODB_URI=mongodb://mongo:27017/appointments
-    volumes:
-      - ./backend/src:/app/src
-      - whatsapp-data:/app/.wwebjs_auth
-      - whatsapp-cache:/app/.wwebjs_cache
-    depends_on:
-      - mongo
-    
-  frontend:
-    build: ./frontend
-    ports:
-      - "3000:3000"
-    depends_on:
-      - backend
-    environment:
-      - WATCHPACK_POLLING=true
-      - WDS_SOCKET_PORT=0
-    volumes:
-      - ./frontend/src:/app/src
-      - ./frontend/public:/app/public
-
   mongo:
     image: mongo:latest
     ports:
@@ -38,6 +9,47 @@ services:
       - mongodb_data:/data/db
     environment:
       - MONGO_INITDB_DATABASE=appointments
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  backend:
+    build: 
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=development
+      - MONGODB_URI=mongodb://mongo:27017/appointments
+      - FRONTEND_URL=http://frontend:3000
+    volumes:
+      - ./backend/src:/app/src
+      - whatsapp-data:/app/.wwebjs_auth
+      - whatsapp-cache:/app/.wwebjs_cache
+    depends_on:
+      mongo:
+        condition: service_healthy
+    restart: unless-stopped
+    
+  frontend:
+    build: 
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    environment:
+      - WATCHPACK_POLLING=true
+      - WDS_SOCKET_PORT=0
+      - REACT_APP_API_URL=http://localhost:3001
+    volumes:
+      - ./frontend/src:/app/src
+      - ./frontend/public:/app/public
+    restart: unless-stopped
 
 volumes:
   whatsapp-data:

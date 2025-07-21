@@ -44,14 +44,24 @@ RUN apt-get update \
 
 WORKDIR /app
 
+# Configurar npm para manejar timeouts
+RUN npm config set timeout 600000 && \
+    npm config set network-timeout 600000 && \
+    npm config set registry https://registry.npmjs.org/
+
 # Instalar TypeScript y nodemon globalmente
 RUN npm install -g typescript ts-node nodemon
 
 # Copiar archivos de configuración
 COPY package*.json tsconfig.json ./
 
-# Instalar todas las dependencias
-RUN npm install
+# Limpiar cache de npm
+RUN npm cache clean --force
+
+# Instalar todas las dependencias con retry
+RUN npm install --prefer-offline || \
+    npm install --registry https://registry.npmjs.org/ || \
+    npm install
 
 # Copiar el código fuente
 COPY ./src ./src

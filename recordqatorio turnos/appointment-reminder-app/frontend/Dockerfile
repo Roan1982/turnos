@@ -5,20 +5,21 @@ WORKDIR /app
 # Instalar dependencias necesarias para desarrollo
 RUN apk add --no-cache python3 make g++
 
+# Configurar npm para manejar timeouts y usar un registry más rápido
+RUN npm config set timeout 600000 && \
+    npm config set network-timeout 600000 && \
+    npm config set registry https://registry.npmjs.org/
+
 # Copiar archivos de configuración
 COPY package*.json ./
 
-# Limpiar el cache de npm y node_modules
-RUN rm -rf node_modules package-lock.json
+# Limpiar el cache de npm
+RUN npm cache clean --force
 
-# Instalar ajv explícitamente primero
-RUN npm install ajv@8.12.0
-
-# Instalar dependencias con opciones para asegurar compatibilidad
-RUN npm install --force
-
-# Verificar que ajv está instalado correctamente
-RUN npm list ajv
+# Instalar dependencias con retry y configuraciones optimizadas
+RUN npm install --no-package-lock --prefer-offline || \
+    npm install --no-package-lock --registry https://registry.npmjs.org/ || \
+    npm install --no-package-lock
 
 # Copiar el resto de archivos
 COPY . .
@@ -26,7 +27,8 @@ COPY . .
 # Configurar entorno de desarrollo
 ENV NODE_ENV=development
 ENV CHOKIDAR_USEPOLLING=true
-ENV CI=true
+ENV CI=false
+ENV GENERATE_SOURCEMAP=false
 
 EXPOSE 3000
 

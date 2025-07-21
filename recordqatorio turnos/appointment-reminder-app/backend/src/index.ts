@@ -2,9 +2,11 @@ import express, { Request, Response } from 'express';
 import cors from 'cors';
 import cron from 'node-cron';
 import dotenv from 'dotenv';
+import { createServer } from 'http';
 import { appointmentRouter } from './controllers/appointmentController';
 import { EmailService } from './services/emailService';
 import { WhatsAppService } from './services/whatsappService';
+import SocketService from './services/socketService';
 import { connectToDatabase } from './config/database';
 import { AppointmentModel } from './models/appointment';
 import qrcode from 'qrcode';
@@ -12,6 +14,10 @@ import qrcode from 'qrcode';
 dotenv.config();
 
 const app = express();
+const server = createServer(app);
+const socketService = SocketService.getInstance();
+socketService.initialize(server);
+
 const emailService = new EmailService();
 // Obtener la instancia singleton de WhatsApp
 const whatsappService = WhatsAppService.getInstance();
@@ -59,7 +65,9 @@ app.get('/api/whatsapp/qr', async (req, res) => {
 // Rutas
 app.use('/api/appointments', appointmentRouter);
 
-// Programar el envío de recordatorios exactamente 24 horas antes del turno
+// Programar el envío de recordatorios con diferentes horarios:
+// Email: 72 horas antes del turno
+// WhatsApp: 48 horas antes del turno
 // Se ejecuta cada 10 minutos para no perder ningún turno
 
 cron.schedule('*/10 * * * *', async () => {
@@ -67,38 +75,51 @@ cron.schedule('*/10 * * * *', async () => {
         const now = new Date();
         const start = new Date(now.getTime() - 5 * 60 * 1000);
         const end = new Date(now.getTime() + 5 * 60 * 1000);
-        console.log('[CRON] Ejecutando. Buscando turnos con fechaEnvio entre', start, 'y', end);
+        console.log('[CRON] Ejecutando. Buscando turnos con fechas de envío entre', start, 'y', end);
 
+        // Buscar turnos que necesiten envío de email o WhatsApp
         const appointments = await AppointmentModel.find({
             recordatorioEnviado: { $exists: true },
             $or: [
-                { 'recordatorioEnviado.email': { $ne: true } },
-                { 'recordatorioEnviado.whatsapp': { $ne: true } }
+                // Email pendiente y fecha de envío en rango
+                { 
+                    'recordatorioEnviado.email': { $ne: true },
+                    fechaEnvioEmail: { $gte: start, $lte: end }
+                },
+                // WhatsApp pendiente y fecha de envío en rango
+                { 
+                    'recordatorioEnviado.whatsapp': { $ne: true },
+                    fechaEnvioWhatsApp: { $gte: start, $lte: end }
+                }
             ],
             estado: { $ne: 'cancelado' }
         });
-        console.log(`[CRON] Turnos pendientes encontrados: ${appointments.length}`);
+        console.log(`[CRON] Turnos encontrados para procesar: ${appointments.length}`);
 
         for (const appointment of appointments) {
-            // Si no tiene fechaEnvio, calcularla como 24h antes del turno y guardar
-            if (!appointment.fechaEnvio && appointment.fecha) {
-                appointment.fechaEnvio = new Date(new Date(appointment.fecha).getTime() - 24 * 60 * 60 * 1000);
-                await appointment.save();
-                console.log(`[CRON] Calculada y guardada fechaEnvio para turno de ${appointment.paciente}:`, appointment.fechaEnvio);
+            // Calcular fechas de envío si no existen (para turnos antiguos)
+            let needsSave = false;
+            if (!appointment.fechaEnvioEmail && appointment.fecha) {
+                appointment.fechaEnvioEmail = new Date(new Date(appointment.fecha).getTime() - 72 * 60 * 60 * 1000);
+                needsSave = true;
+                console.log(`[CRON] Calculada fechaEnvioEmail para ${appointment.paciente}:`, appointment.fechaEnvioEmail);
             }
-            // Verificar si la fechaEnvio está en el rango para enviar
-            if (!appointment.fechaEnvio) continue;
-            if (appointment.fechaEnvio >= start && appointment.fechaEnvio <= end) {
-                console.log(`[CRON] Turno EN RANGO para enviar: paciente=${appointment.paciente}, fechaEnvio=${appointment.fechaEnvio}, email=${appointment.email}, whatsapp=${appointment.telefono}`);
-            } else {
-                continue;
+            if (!appointment.fechaEnvioWhatsApp && appointment.fecha) {
+                appointment.fechaEnvioWhatsApp = new Date(new Date(appointment.fecha).getTime() - 48 * 60 * 60 * 1000);
+                needsSave = true;
+                console.log(`[CRON] Calculada fechaEnvioWhatsApp para ${appointment.paciente}:`, appointment.fechaEnvioWhatsApp);
+            }
+            if (needsSave) {
+                await appointment.save();
             }
 
             let enviado = false;
             // Convertir documento Mongoose a objeto plano para los servicios
             const plainAppointment = appointment.toObject ? appointment.toObject() : appointment;
-            // Enviar email si no fue enviado
-            if (!appointment.recordatorioEnviado.email) {
+            // Enviar email si no fue enviado y está en el rango de tiempo
+            if (!appointment.recordatorioEnviado.email && appointment.fechaEnvioEmail &&
+                appointment.fechaEnvioEmail >= start && appointment.fechaEnvioEmail <= end &&
+                appointment.email && appointment.email.trim() !== '') {
                 try {
                     console.log('[CRON][EMAIL] Enviando recordatorio a:', appointment.email, 'para', appointment.paciente, 'turno:', appointment.fecha, 'hora:', appointment.hora);
                     await emailService.sendReminder(plainAppointment);
@@ -110,14 +131,17 @@ cron.schedule('*/10 * * * *', async () => {
                     console.error('[CRON][EMAIL] Error enviando recordatorio por email:', e);
                 }
             }
-            // Enviar WhatsApp si no fue enviado
-            if (!appointment.recordatorioEnviado.whatsapp) {
+            
+            // Enviar WhatsApp si no fue enviado y está en el rango de tiempo
+            if (!appointment.recordatorioEnviado.whatsapp && appointment.fechaEnvioWhatsApp &&
+                appointment.fechaEnvioWhatsApp >= start && appointment.fechaEnvioWhatsApp <= end &&
+                appointment.telefono && appointment.telefono.trim() !== '') {
                 try {
                     console.log('[CRON][WHATSAPP] Intentando enviar WhatsApp:', {
                         telefono: appointment.telefono,
                         paciente: appointment.paciente,
                         fechaTurno: appointment.fecha,
-                        fechaEnvio: appointment.fechaEnvio,
+                        fechaEnvioWhatsApp: appointment.fechaEnvioWhatsApp,
                         whatsappReady: whatsappService.getIsReady()
                     });
                     await whatsappService.sendReminder(plainAppointment);
@@ -143,8 +167,9 @@ cron.schedule('*/10 * * * *', async () => {
 
 // @ts-ignore
 const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => {
+server.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
+    console.log('Socket.IO habilitado para actualizaciones en tiempo real');
 });
 
 
@@ -155,24 +180,40 @@ app.get('/api/appointments/debug-reminders', async (req: Request, res: Response)
         const start = new Date(now.getTime() - 5 * 60 * 1000);
         const end = new Date(now.getTime() + 5 * 60 * 1000);
         console.log('[DEBUG-REMINDERS] Buscando turnos entre', start, 'y', end);
+        
         const query = {
-            fechaEnvio: { $gte: start, $lte: end },
             $or: [
-                { 'recordatorioEnviado.email': { $ne: true } },
-                { 'recordatorioEnviado.whatsapp': { $ne: true } }
+                // Email pendiente y fecha de envío en rango
+                { 
+                    'recordatorioEnviado.email': { $ne: true },
+                    fechaEnvioEmail: { $gte: start, $lte: end }
+                },
+                // WhatsApp pendiente y fecha de envío en rango
+                { 
+                    'recordatorioEnviado.whatsapp': { $ne: true },
+                    fechaEnvioWhatsApp: { $gte: start, $lte: end }
+                }
             ],
             estado: { $ne: 'cancelado' }
         };
-        console.log('[DEBUG-REMINDERS] Query:', JSON.stringify(query));
+        
+        console.log('[DEBUG-REMINDERS] Query:', JSON.stringify(query, null, 2));
         const appointments = await AppointmentModel.find(query);
         console.log('[DEBUG-REMINDERS] Resultados encontrados:', appointments.length);
+        
         if (appointments.length === 0) {
-            return res.json({ message: 'No hay turnos para enviar recordatorio en este rango de tiempo.' });
+            return res.json({ 
+                message: 'No hay turnos para enviar recordatorio en este rango de tiempo.',
+                timeRange: { start, end, now }
+            });
         }
+        
         res.json(appointments.map((a: any) => ({
             paciente: a.paciente,
             fecha: a.fecha,
-            fechaEnvio: a.fechaEnvio,
+            fechaEnvio: a.fechaEnvio, // mantener por compatibilidad
+            fechaEnvioEmail: a.fechaEnvioEmail,
+            fechaEnvioWhatsApp: a.fechaEnvioWhatsApp,
             email: a.email,
             telefono: a.telefono,
             estado: a.estado,

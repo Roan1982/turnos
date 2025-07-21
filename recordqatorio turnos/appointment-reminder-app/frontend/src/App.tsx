@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { WhatsAppQrModal } from './components/WhatsAppQrModal';
-import { Container, Typography, Box, Alert, Tabs, Tab, Fab, Tooltip, Paper, List, ListItem, ListItemText, Divider } from '@mui/material';
+import { Container, Typography, Box, Alert, Tabs, Tab, Fab, Tooltip, Paper, List, ListItem, ListItemText, Divider, Snackbar } from '@mui/material';
 import WhatsAppIcon from '@mui/icons-material/WhatsApp';
 import { FileUpload } from './components/FileUpload';
 import { AppointmentTable } from './components/AppointmentTable';
+import WebSocketService from './services/webSocketService';
 import axios from 'axios';
 
 import { Appointment } from './shared/types';
@@ -47,6 +48,63 @@ function App() {
     const [tabValue, setTabValue] = useState(0);
     const [qrOpen, setQrOpen] = useState(false);
     const [processingResult, setProcessingResult] = useState<ProcessingResult | null>(null);
+    const [snackbarMessage, setSnackbarMessage] = useState<string>('');
+    const [snackbarOpen, setSnackbarOpen] = useState(false);
+    const [refreshTrigger, setRefreshTrigger] = useState(0);
+
+    const webSocketService = WebSocketService.getInstance();
+
+    useEffect(() => {
+        // Conectar WebSocket
+        webSocketService.connect();
+
+        // Configurar listeners para actualizaciones en tiempo real
+        const handleAppointmentUpdate = (data: any) => {
+            console.log('📱 Actualización de turno recibida:', data);
+            // Forzar refresco de la tabla
+            setRefreshTrigger(prev => prev + 1);
+        };
+
+        const handleCountsUpdate = (data: any) => {
+            console.log('📊 Actualización de contadores recibida:', data);
+            // Los contadores se actualizarán automáticamente en AppointmentTable
+        };
+
+        const handleReminderSent = (data: any) => {
+            console.log('📧 Recordatorio enviado:', data);
+            setSnackbarMessage(`Recordatorio ${data.tipo} enviado a ${data.paciente}`);
+            setSnackbarOpen(true);
+            // Forzar refresco de la tabla
+            setRefreshTrigger(prev => prev + 1);
+        };
+
+        const handleBulkUpdate = (data: any) => {
+            console.log('📦 Actualización masiva completada:', data);
+            setSnackbarMessage(`Procesamiento masivo completado: ${data.processed} enviados, ${data.errors} errores`);
+            setSnackbarOpen(true);
+            // Forzar refresco de la tabla
+            setRefreshTrigger(prev => prev + 1);
+        };
+
+        // Registrar listeners
+        webSocketService.onAppointmentUpdate(handleAppointmentUpdate);
+        webSocketService.onCountsUpdate(handleCountsUpdate);
+        webSocketService.onReminderSent(handleReminderSent);
+        webSocketService.onBulkUpdate(handleBulkUpdate);
+
+        // Cleanup al desmontar
+        return () => {
+            webSocketService.offAppointmentUpdate(handleAppointmentUpdate);
+            webSocketService.offCountsUpdate(handleCountsUpdate);
+            webSocketService.offReminderSent(handleReminderSent);
+            webSocketService.offBulkUpdate(handleBulkUpdate);
+            webSocketService.disconnect();
+        };
+    }, []);
+
+    const handleSnackbarClose = () => {
+        setSnackbarOpen(false);
+    };
 
     const handleFileUpload = async (file: File) => {
         try {
@@ -190,9 +248,18 @@ function App() {
                     )}
                 </TabPanel>
                 <TabPanel value={tabValue} index={1}>
-                    <AppointmentTable appointments={appointments} />
+                    <AppointmentTable appointments={appointments} refreshTrigger={refreshTrigger} />
                 </TabPanel>
             </Box>
+            
+            {/* Snackbar para notificaciones en tiempo real */}
+            <Snackbar
+                open={snackbarOpen}
+                autoHideDuration={4000}
+                onClose={handleSnackbarClose}
+                message={snackbarMessage}
+                anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+            />
         </Container>
     );
 }

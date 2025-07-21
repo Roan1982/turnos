@@ -4,6 +4,7 @@ import { ExcelService } from '../services/excelService';
 import { AppointmentModel, Appointment, AppointmentInput } from '../models/appointment';
 import { EmailService } from '../services/emailService';
 import { WhatsAppService } from '../services/whatsappService';
+import SocketService from '../services/socketService';
 
 // Extended types
 interface MulterFile extends Express.Multer.File {
@@ -70,6 +71,7 @@ const upload = multer({
 });
 
 const router = express.Router();
+const socketService = SocketService.getInstance();
 
 router.post('/upload', upload.single('file'), async (req: MulterRequest, res: Response) => {
     try {
@@ -120,8 +122,8 @@ router.post('/upload', upload.single('file'), async (req: MulterRequest, res: Re
                     continue;
                 }
 
-                // Calcular fechaEnvio si no existe y usar hora del turno
-                if (!input.fechaEnvio && input.fecha && input.hora) {
+                // Calcular fechas de envío separadas si no existen
+                if ((!input.fechaEnvioEmail || !input.fechaEnvioWhatsApp) && input.fecha && input.hora) {
                     // Parsear fecha y hora manualmente para evitar desfases de zona horaria
                     let y, m, d;
                     if (typeof input.fecha === 'string') {
@@ -155,9 +157,21 @@ router.post('/upload', upload.single('file'), async (req: MulterRequest, res: Re
                     const [h, min, s] = typeof input.hora === 'string' ? input.hora.split(':').map(Number) : [0, 0, 0];
                     // Construir fecha del turno usando UTC para evitar problemas de zona horaria
                     const fechaTurno = new Date(Date.UTC(y, m, d, h || 0, min || 0, s || 0, 0));
-                    // Restar exactamente 24 horas y agregar 3 horas para compensar el desfase
-                    const fechaEnvio = new Date(fechaTurno.getTime() - 24 * 60 * 60 * 1000 + 3 * 60 * 60 * 1000);
-                    input.fechaEnvio = fechaEnvio;
+                    
+                    // Calcular fechaEnvioEmail: 72 horas antes del turno
+                    if (!input.fechaEnvioEmail) {
+                        const fechaEnvioEmail = new Date(fechaTurno.getTime() - 72 * 60 * 60 * 1000 + 3 * 60 * 60 * 1000);
+                        input.fechaEnvioEmail = fechaEnvioEmail;
+                    }
+                    
+                    // Calcular fechaEnvioWhatsApp: 48 horas antes del turno
+                    if (!input.fechaEnvioWhatsApp) {
+                        const fechaEnvioWhatsApp = new Date(fechaTurno.getTime() - 48 * 60 * 60 * 1000 + 3 * 60 * 60 * 1000);
+                        input.fechaEnvioWhatsApp = fechaEnvioWhatsApp;
+                    }
+                    
+                    // Mantener fechaEnvio por compatibilidad (usar la del email)
+                    input.fechaEnvio = input.fechaEnvioEmail;
                 }
 
                 // Intentar crear el turno
@@ -342,7 +356,7 @@ router.get('/', async (req: Request, res: Response) => {
         const hasPrevPage = page > 1;
 
         console.log(`Resultados encontrados: ${appointments.length} de ${total} total`);
-        console.log('Muestra de appointments:', appointments.slice(0, 2).map(a => ({
+        console.log('Muestra de appointments:', appointments.slice(0, 2).map((a: any) => ({
             paciente: a.paciente,
             emailEnviado: a.recordatorioEnviado.email,
             whatsappEnviado: a.recordatorioEnviado.whatsapp
@@ -403,6 +417,9 @@ router.post('/:id/reenviar', async (req: Request, res: Response) => {
                 await emailService.sendReminder(appointment);
                 appointment.recordatorioEnviado.email = true;
                 appointment.recordatorioEnviado.fechaEnvioEmail = new Date();
+                
+                // Notificar vía WebSocket
+                socketService.emitReminderSent(appointment._id.toString(), 'email', appointment.paciente);
             } else if (tipo === 'whatsapp') {
                 if (!appointment.telefono || appointment.telefono.trim() === '') {
                     return res.status(400).json({ error: 'Este turno no tiene teléfono configurado' });
@@ -410,6 +427,15 @@ router.post('/:id/reenviar', async (req: Request, res: Response) => {
                 await WhatsAppService.sendReminder(appointment);
                 appointment.recordatorioEnviado.whatsapp = true;
                 appointment.recordatorioEnviado.fechaEnvioWhatsApp = new Date();
+                
+                // Notificar vía WebSocket
+                socketService.emitReminderSent(appointment._id.toString(), 'whatsapp', appointment.paciente);
+            }
+            
+            // Cambiar estado a 'notificado' si se envió el recordatorio y no está cancelado
+            if (appointment.estado !== 'cancelado') {
+                appointment.estado = 'notificado';
+                console.log(`[REENVIO] Estado cambiado a 'notificado' para ${appointment.paciente} (${tipo})`);
             }
         } catch (error) {
             console.error(`Error al enviar ${tipo}:`, error);
@@ -423,6 +449,32 @@ router.post('/:id/reenviar', async (req: Request, res: Response) => {
         }
 
         await appointment.save();
+        
+        // Emitir actualización del turno vía WebSocket
+        socketService.emitAppointmentUpdate(appointment._id.toString(), {
+            estado: appointment.estado,
+            recordatorioEnviado: appointment.recordatorioEnviado
+        });
+        
+        // Actualizar contadores y emitir vía WebSocket
+        const [total, pending, notified] = await Promise.all([
+            AppointmentModel.countDocuments(),
+            AppointmentModel.countDocuments({
+                $and: [
+                    { 'recordatorioEnviado.email': { $ne: true } },
+                    { 'recordatorioEnviado.whatsapp': { $ne: true } }
+                ]
+            }),
+            AppointmentModel.countDocuments({
+                $or: [
+                    { 'recordatorioEnviado.email': true },
+                    { 'recordatorioEnviado.whatsapp': true }
+                ]
+            })
+        ]);
+        
+        socketService.emitCountsUpdate({ total, pending, notified });
+        
         res.json({ message: `Recordatorio por ${tipo} enviado correctamente`, appointment });
     } catch (error) {
         console.error('Error sending notification:', error);
@@ -430,44 +482,76 @@ router.post('/:id/reenviar', async (req: Request, res: Response) => {
     }
 });
 
-// Ruta temporal para enviar recordatorios a todos los turnos pendientes (sin filtrar por fecha ni hora)
+// Ruta temporal para enviar recordatorios a todos los turnos pendientes (respetando fechas de envío)
 router.post('/enviar-todos-pendientes', async (req: Request, res: Response) => {
     try {
-        // Buscar turnos que no tengan recordatorio enviado por email ni whatsapp
+        const now = new Date();
+        
+        // Buscar turnos que no tengan recordatorio enviado y estén en tiempo de envío
         const pendientes = await AppointmentModel.find({
             $or: [
-                { 'recordatorioEnviado.email': { $ne: true } },
-                { 'recordatorioEnviado.whatsapp': { $ne: true } }
-            ]
+                // Email pendiente y fecha pasada o muy cercana
+                { 
+                    'recordatorioEnviado.email': { $ne: true },
+                    fechaEnvioEmail: { $lte: now }
+                },
+                // WhatsApp pendiente y fecha pasada o muy cercana
+                { 
+                    'recordatorioEnviado.whatsapp': { $ne: true },
+                    fechaEnvioWhatsApp: { $lte: now }
+                }
+            ],
+            estado: { $ne: 'cancelado' }
         });
+        
         let enviados = 0;
         let errores = 0;
         
         for (const turno of pendientes) {
             try {
-                // Enviar email si no fue enviado y tiene email válido
-                if (!turno.recordatorioEnviado.email && turno.email && turno.email.trim() !== '') {
+                let recordatorioEnviado = false;
+                
+                // Enviar email si no fue enviado, tiene email válido y está en tiempo
+                if (!turno.recordatorioEnviado.email && turno.email && turno.email.trim() !== '' &&
+                    turno.fechaEnvioEmail && turno.fechaEnvioEmail <= now) {
                     try {
                         const emailService = new EmailService();
                         await emailService.sendReminder(turno);
                         turno.recordatorioEnviado.email = true;
                         turno.recordatorioEnviado.fechaEnvioEmail = new Date();
+                        recordatorioEnviado = true;
+                        console.log(`[MANUAL] Email enviado a ${turno.email} para ${turno.paciente}`);
+                        
+                        // Notificar vía WebSocket
+                        socketService.emitReminderSent(turno._id.toString(), 'email', turno.paciente);
                     } catch (emailError) {
                         console.error('Error enviando email:', emailError);
                         errores++;
                     }
                 }
                 
-                // Enviar whatsapp si no fue enviado y tiene teléfono válido
-                if (!turno.recordatorioEnviado.whatsapp && turno.telefono && turno.telefono.trim() !== '') {
+                // Enviar whatsapp si no fue enviado, tiene teléfono válido y está en tiempo
+                if (!turno.recordatorioEnviado.whatsapp && turno.telefono && turno.telefono.trim() !== '' &&
+                    turno.fechaEnvioWhatsApp && turno.fechaEnvioWhatsApp <= now) {
                     try {
                         await WhatsAppService.sendReminder(turno);
                         turno.recordatorioEnviado.whatsapp = true;
                         turno.recordatorioEnviado.fechaEnvioWhatsApp = new Date();
+                        recordatorioEnviado = true;
+                        console.log(`[MANUAL] WhatsApp enviado a ${turno.telefono} para ${turno.paciente}`);
+                        
+                        // Notificar vía WebSocket
+                        socketService.emitReminderSent(turno._id.toString(), 'whatsapp', turno.paciente);
                     } catch (whatsappError) {
                         console.error('Error enviando WhatsApp:', whatsappError);
                         errores++;
                     }
+                }
+                
+                // Si se envió al menos un recordatorio, cambiar estado a 'notificado'
+                if (recordatorioEnviado && turno.estado !== 'cancelado') {
+                    turno.estado = 'notificado';
+                    console.log(`[MANUAL] Estado cambiado a 'notificado' para ${turno.paciente}`);
                 }
                 
                 await turno.save();
@@ -478,14 +562,165 @@ router.post('/enviar-todos-pendientes', async (req: Request, res: Response) => {
             }
         }
         
+        // Emitir actualización masiva vía WebSocket
+        socketService.emitBulkUpdate(enviados, errores);
+        
+        // Actualizar contadores finales
+        const [total, pending, notified] = await Promise.all([
+            AppointmentModel.countDocuments(),
+            AppointmentModel.countDocuments({
+                $and: [
+                    { 'recordatorioEnviado.email': { $ne: true } },
+                    { 'recordatorioEnviado.whatsapp': { $ne: true } }
+                ]
+            }),
+            AppointmentModel.countDocuments({
+                $or: [
+                    { 'recordatorioEnviado.email': true },
+                    { 'recordatorioEnviado.whatsapp': true }
+                ]
+            })
+        ]);
+        
+        socketService.emitCountsUpdate({ total, pending, notified });
+        
         res.json({ 
-            message: `Recordatorios enviados a ${enviados} turnos pendientes`, 
+            message: `Recordatorios procesados para ${enviados} turnos pendientes`, 
             total: pendientes.length,
-            errores: errores
+            errores: errores,
+            info: "Se respetaron las fechas de envío: Email (72h antes), WhatsApp (48h antes)"
         });
     } catch (error) {
         console.error('Error enviando recordatorios masivos:', error);
         res.status(500).json({ error: 'Error al enviar recordatorios masivos' });
+    }
+});
+
+// Ruta para verificar la consistencia de fechas de envío
+router.get('/verify-send-dates', async (req: Request, res: Response) => {
+    try {
+        const stats = {
+            total: 0,
+            conFechaEnvioEmail: 0,
+            conFechaEnvioWhatsApp: 0,
+            sinFechaEnvioEmail: 0,
+            sinFechaEnvioWhatsApp: 0,
+            conFechaEnvioDeprecated: 0,
+            inconsistentes: [] as any[]
+        };
+
+        const turnos = await AppointmentModel.find({});
+        stats.total = turnos.length;
+
+        for (const turno of turnos) {
+            if (turno.fechaEnvioEmail) stats.conFechaEnvioEmail++;
+            else stats.sinFechaEnvioEmail++;
+
+            if (turno.fechaEnvioWhatsApp) stats.conFechaEnvioWhatsApp++;
+            else stats.sinFechaEnvioWhatsApp++;
+
+            if (turno.fechaEnvio) stats.conFechaEnvioDeprecated++;
+
+            // Verificar inconsistencias
+            if (turno.fecha) {
+                const fechaTurno = new Date(turno.fecha);
+                const expectedEmailDate = new Date(fechaTurno.getTime() - 72 * 60 * 60 * 1000);
+                const expectedWhatsAppDate = new Date(fechaTurno.getTime() - 48 * 60 * 60 * 1000);
+
+                if (turno.fechaEnvioEmail && Math.abs(turno.fechaEnvioEmail.getTime() - expectedEmailDate.getTime()) > 60000) {
+                    stats.inconsistentes.push({
+                        id: turno._id,
+                        paciente: turno.paciente,
+                        tipo: 'email',
+                        fechaEsperada: expectedEmailDate,
+                        fechaActual: turno.fechaEnvioEmail
+                    });
+                }
+
+                if (turno.fechaEnvioWhatsApp && Math.abs(turno.fechaEnvioWhatsApp.getTime() - expectedWhatsAppDate.getTime()) > 60000) {
+                    stats.inconsistentes.push({
+                        id: turno._id,
+                        paciente: turno.paciente,
+                        tipo: 'whatsapp',
+                        fechaEsperada: expectedWhatsAppDate,
+                        fechaActual: turno.fechaEnvioWhatsApp
+                    });
+                }
+            }
+        }
+
+        res.json({
+            message: 'Verificación de consistencia completada',
+            stats,
+            recomendaciones: {
+                ...(stats.sinFechaEnvioEmail > 0 && { email: `${stats.sinFechaEnvioEmail} turnos sin fecha de envío de email` }),
+                ...(stats.sinFechaEnvioWhatsApp > 0 && { whatsapp: `${stats.sinFechaEnvioWhatsApp} turnos sin fecha de envío de WhatsApp` }),
+                ...(stats.inconsistentes.length > 0 && { inconsistencias: `${stats.inconsistentes.length} turnos con fechas inconsistentes` })
+            }
+        });
+    } catch (error) {
+        console.error('Error en verificación:', error);
+        res.status(500).json({ error: 'Error al verificar fechas de envío' });
+    }
+});
+
+// Ruta para migrar turnos existentes a las nuevas fechas de envío
+router.post('/migrate-send-dates', async (req: Request, res: Response) => {
+    try {
+        // Buscar turnos que no tengan las nuevas fechas de envío
+        const turnosSinFechas = await AppointmentModel.find({
+            $or: [
+                { fechaEnvioEmail: { $exists: false } },
+                { fechaEnvioWhatsApp: { $exists: false } }
+            ]
+        });
+
+        let migrados = 0;
+        let errores = 0;
+
+        for (const turno of turnosSinFechas) {
+            try {
+                let needsSave = false;
+
+                if (!turno.fechaEnvioEmail && turno.fecha) {
+                    // Calcular fechaEnvioEmail: 72 horas antes del turno
+                    turno.fechaEnvioEmail = new Date(new Date(turno.fecha).getTime() - 72 * 60 * 60 * 1000);
+                    needsSave = true;
+                }
+
+                if (!turno.fechaEnvioWhatsApp && turno.fecha) {
+                    // Calcular fechaEnvioWhatsApp: 48 horas antes del turno
+                    turno.fechaEnvioWhatsApp = new Date(new Date(turno.fecha).getTime() - 48 * 60 * 60 * 1000);
+                    needsSave = true;
+                }
+
+                // Mantener fechaEnvio por compatibilidad (usar la del email)
+                if (!turno.fechaEnvio && turno.fechaEnvioEmail) {
+                    turno.fechaEnvio = turno.fechaEnvioEmail;
+                    needsSave = true;
+                }
+
+                if (needsSave) {
+                    await turno.save();
+                    migrados++;
+                    console.log(`[MIGRACIÓN] Migrado turno de ${turno.paciente}: Email ${turno.fechaEnvioEmail}, WhatsApp ${turno.fechaEnvioWhatsApp}`);
+                }
+            } catch (error) {
+                console.error(`Error migrando turno ${turno._id}:`, error);
+                errores++;
+            }
+        }
+
+        res.json({
+            message: `Migración completada`,
+            totalEncontrados: turnosSinFechas.length,
+            migrados,
+            errores,
+            info: "Se calcularon las fechas de envío para turnos existentes: Email (72h antes), WhatsApp (48h antes)"
+        });
+    } catch (error) {
+        console.error('Error en migración:', error);
+        res.status(500).json({ error: 'Error al migrar fechas de envío' });
     }
 });
 

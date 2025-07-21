@@ -61,9 +61,16 @@ const formatDateTime = (date: string | Date) => {
 
 interface AppointmentTableProps {
     appointments?: Appointment[];
+    refreshTrigger?: number;
 }
 
-export const AppointmentTable: React.FC<AppointmentTableProps> = ({ appointments: initialAppointments }: { appointments?: Appointment[] }) => {
+export const AppointmentTable: React.FC<AppointmentTableProps> = ({ 
+    appointments: initialAppointments, 
+    refreshTrigger 
+}: { 
+    appointments?: Appointment[];
+    refreshTrigger?: number;
+}) => {
     const [appointments, setAppointments] = useState<Appointment[]>([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -93,6 +100,15 @@ export const AppointmentTable: React.FC<AppointmentTableProps> = ({ appointments
         pending: 0,
         notified: 0
     });
+
+    // Effect para refrescar cuando cambie refreshTrigger
+    useEffect(() => {
+        if (refreshTrigger !== undefined) {
+            console.log('🔄 Refrescando tabla por WebSocket trigger:', refreshTrigger);
+            fetchAppointments();
+            fetchTabCounts();
+        }
+    }, [refreshTrigger]);
 
     const fetchAppointments = async () => {
         try {
@@ -525,7 +541,8 @@ export const AppointmentTable: React.FC<AppointmentTableProps> = ({ appointments
                         <TableRow>
                             <TableCell>Fecha del Turno</TableCell>
                             <TableCell>Fecha de Carga</TableCell>
-                            <TableCell>Fecha de Envío</TableCell>
+                            <TableCell>Envío Email (72h)</TableCell>
+                            <TableCell>Envío WhatsApp (48h)</TableCell>
                             <TableCell>Hora</TableCell>
                             <TableCell>Paciente</TableCell>
                             <TableCell>Profesional</TableCell>
@@ -537,13 +554,15 @@ export const AppointmentTable: React.FC<AppointmentTableProps> = ({ appointments
                     </TableHead>
                     <TableBody>
                         {Array.isArray(appointments) && appointments.map((appointment: Appointment) => {
-                            // Mostrar la fecha programada de envío (fechaEnvio)
-                            let fechaEnvioProgramada = appointment.fechaEnvio ? formatDateTime(appointment.fechaEnvio) : '-';
+                            // Mostrar las fechas programadas de envío separadas
+                            let fechaEnvioEmail = appointment.fechaEnvioEmail ? formatDateTime(appointment.fechaEnvioEmail) : '-';
+                            let fechaEnvioWhatsApp = appointment.fechaEnvioWhatsApp ? formatDateTime(appointment.fechaEnvioWhatsApp) : '-';
                             return (
                                 <TableRow key={appointment._id}>
                                     <TableCell>{formatDate(appointment.fecha)}</TableCell>
                                     <TableCell>{appointment.fechaCarga ? formatDateTime(appointment.fechaCarga) : '-'}</TableCell>
-                                    <TableCell>{fechaEnvioProgramada}</TableCell>
+                                    <TableCell>{fechaEnvioEmail}</TableCell>
+                                    <TableCell>{fechaEnvioWhatsApp}</TableCell>
                                     <TableCell>{appointment.hora}</TableCell>
                                     <TableCell>
                                         <Typography variant="body2">{appointment.paciente}</Typography>
@@ -599,7 +618,7 @@ export const AppointmentTable: React.FC<AppointmentTableProps> = ({ appointments
                         })}
                         {(!Array.isArray(appointments) || appointments.length === 0) && (
                             <TableRow>
-                                <TableCell colSpan={10} align="center">
+                                <TableCell colSpan={11} align="center">
                                     <Typography variant="body2" color="textSecondary">
                                         No hay turnos para mostrar
                                     </Typography>
@@ -615,7 +634,7 @@ export const AppointmentTable: React.FC<AppointmentTableProps> = ({ appointments
                 <Pagination
                     count={totalPages}
                     page={currentPage}
-                    onChange={(event, page) => setCurrentPage(page)}
+                    onChange={(event: any, page: number) => setCurrentPage(page)}
                     color="primary"
                     size="large"
                     showFirstButton

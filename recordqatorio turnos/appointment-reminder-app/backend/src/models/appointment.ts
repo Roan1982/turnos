@@ -5,7 +5,9 @@ export interface AppointmentInput {
     fecha: Date; // Fecha y hora real del turno (del Excel)
     fechaCarga?: Date; // Fecha en que se cargó el turno
     hora: string;
-    fechaEnvio?: Date; // Fecha y hora en que se debe enviar el recordatorio (opcional, solo se setea cuando se envía)
+    fechaEnvio?: Date; // Fecha y hora en que se debe enviar el recordatorio (opcional, DEPRECATED)
+    fechaEnvioEmail?: Date; // Fecha para enviar email (72 horas antes)
+    fechaEnvioWhatsApp?: Date; // Fecha para enviar WhatsApp (48 horas antes)
     nroDoc: string;
     paciente: string;
     telefono?: string; // Cambiar a opcional
@@ -35,7 +37,9 @@ const AppointmentSchema = new Schema<AppointmentDocument>({
     fecha: { type: Date, required: true }, // Fecha y hora real del turno (del Excel)
     fechaCarga: { type: Date, default: Date.now }, // Fecha de carga
     hora: { type: String, required: true },
-    fechaEnvio: { type: Date, required: false }, // Fecha y hora en que se debe enviar el recordatorio (opcional)
+    fechaEnvio: { type: Date, required: false }, // DEPRECATED - mantener por compatibilidad
+    fechaEnvioEmail: { type: Date, required: false }, // Fecha para enviar email (72 horas antes)
+    fechaEnvioWhatsApp: { type: Date, required: false }, // Fecha para enviar WhatsApp (48 horas antes)
     nroDoc: { type: String, required: true },
     paciente: { type: String, required: true },
     telefono: { type: String, required: false }, // Cambiar a opcional también
