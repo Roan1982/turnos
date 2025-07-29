@@ -2,17 +2,24 @@
 
 echo "🐳 Iniciando construcción optimizada de Docker..."
 
+# Verificar que estamos en la carpeta correcta
+if [ ! -f "docker-compose.yml" ]; then
+    echo "❌ Error: No se encuentra docker-compose.yml"
+    echo "📁 Asegúrate de estar en la carpeta appointment-reminder-app"
+    exit 1
+fi
+
 # Limpiar containers y volúmenes anteriores si es necesario
 echo "🧹 Limpiando recursos anteriores..."
 docker-compose down -v 2>/dev/null || true
 docker system prune -f 2>/dev/null || true
 
-# Construir servicios por separado para mejor control
-echo "📦 Construyendo MongoDB..."
+# Iniciar MongoDB primero (no necesita build, usa imagen oficial)
+echo "📦 Iniciando MongoDB..."
 docker-compose up -d mongo
 
 echo "⏳ Esperando que MongoDB esté listo..."
-sleep 10
+sleep 15
 
 echo "🔧 Construyendo Backend..."
 docker-compose build backend --no-cache
